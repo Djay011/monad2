@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
-import { Wallet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Wallet, CheckCircle, AlertCircle } from 'lucide-react';
 
 const MONAD_CHAIN_ID = '0x8f'; // 143 in Hex
 const TARGET_NETWORK = {
@@ -18,11 +18,11 @@ const TARGET_NETWORK = {
 // Contract & Mint Details
 const RECEIVER_WALLET = '0xc3426581b4531B0339410c39FA14AF640fBe3aD8';
 const MINT_PRICE = '0.00002'; // 0.00002 MON
-const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"nado","amt":"1000"}';
+const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"rave","amt":"1000"}';
 const TOTAL_SUPPLY = 21000000;
 const MINT_AMOUNT = 1000;
 const INITIAL_MINTED = 0; // Set your starting progress here (e.g. 10M)
-const INITIAL_WALLET_BALANCE = 7.704440634272837383; // Current wallet balance as of today
+const INITIAL_WALLET_BALANCE = 8.124440917972837; // Current wallet balance as of today
 
 function App() {
   const [provider, setProvider] = useState(null);
@@ -34,9 +34,9 @@ function App() {
   const [totalMinted, setTotalMinted] = useState(0); // Will be updated with real on-chain data
   const [myInscriptions, setMyInscriptions] = useState(() => {
     try {
-      const saved = localStorage.getItem('nado_inscriptions');
+      const saved = localStorage.getItem('rave_inscriptions');
       return saved ? JSON.parse(saved) : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   });
@@ -46,22 +46,11 @@ function App() {
   const [isMinting, setIsMinting] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' }); // type: 'waiting', 'success', 'error'
 
-  useEffect(() => {
-    localStorage.setItem('nado_inscriptions', JSON.stringify(myInscriptions));
-
-    if (Number(MINT_PRICE) === 0) {
-      const localMints = myInscriptions.reduce((acc, curr) => acc + curr.amount, 0);
-      let newTotal = INITIAL_MINTED + localMints;
-      if (newTotal > TOTAL_SUPPLY) newTotal = TOTAL_SUPPLY;
-      setTotalMinted(newTotal);
-    }
-  }, [myInscriptions]);
-
-  const fetchTotalMinted = async () => {
+  const fetchTotalMinted = useCallback(async () => {
     try {
       const rpcProvider = new ethers.JsonRpcProvider(TARGET_NETWORK.rpcUrls[0]);
-      const balance = await rpcProvider.getBalance(RECEIVER_WALLET);
-      const balanceInMon = ethers.formatEther(balance);
+      const bal = await rpcProvider.getBalance(RECEIVER_WALLET);
+      const balanceInMon = ethers.formatEther(bal);
 
       let realTotalMinted = INITIAL_MINTED;
 
@@ -76,31 +65,14 @@ function App() {
       }
 
       if (realTotalMinted > TOTAL_SUPPLY) realTotalMinted = TOTAL_SUPPLY;
-      setTotalMinted(realTotalMinted);
+      return realTotalMinted;
     } catch (err) {
       console.error("Failed to fetch real minted amount", err);
+      return null;
     }
-  };
-
-  useEffect(() => {
-    fetchTotalMinted(); // Fetch the real number from blockchain on load
-
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', () => window.location.reload());
-
-      // Initial check if already connected
-      checkConnection();
-    }
-
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      }
-    };
   }, []);
 
-  const checkConnection = async () => {
+  const checkConnection = useCallback(async () => {
     try {
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const accounts = await browserProvider.listAccounts();
@@ -118,9 +90,9 @@ function App() {
     } catch (err) {
       console.error("Failed to check connection", err);
     }
-  };
+  }, []);
 
-  const handleAccountsChanged = (accounts) => {
+  const handleAccountsChanged = useCallback((accounts) => {
     if (accounts.length === 0) {
       // Disconnected
       setAccount('');
@@ -129,7 +101,57 @@ function App() {
       setAccount(accounts[0]);
       checkConnection();
     }
-  };
+  }, [checkConnection]);
+
+  // Compute totalMinted from local inscriptions when price is 0 (derived state)
+  const localTotalMinted = useMemo(() => {
+    if (Number(MINT_PRICE) === 0) {
+      const localMints = myInscriptions.reduce((acc, curr) => acc + curr.amount, 0);
+      let newTotal = INITIAL_MINTED + localMints;
+      if (newTotal > TOTAL_SUPPLY) newTotal = TOTAL_SUPPLY;
+      return newTotal;
+    }
+    return null;
+  }, [myInscriptions]);
+
+  // Save inscriptions to localStorage
+  useEffect(() => {
+    localStorage.setItem('rave_inscriptions', JSON.stringify(myInscriptions));
+  }, [myInscriptions]);
+
+  // Sync localTotalMinted into state when price is 0
+  useEffect(() => {
+    if (localTotalMinted !== null) {
+      const id = requestAnimationFrame(() => setTotalMinted(localTotalMinted));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [localTotalMinted]);
+
+  // Fetch real minted amount and set up event listeners on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchTotalMinted().then((result) => {
+      if (isMounted && result !== null) {
+        setTotalMinted(result);
+      }
+    });
+
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', () => window.location.reload());
+
+      // Initial check if already connected — deferred to avoid sync setState
+      queueMicrotask(() => checkConnection());
+    }
+
+    return () => {
+      isMounted = false;
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      }
+    };
+  }, [fetchTotalMinted, handleAccountsChanged, checkConnection]);
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -178,7 +200,7 @@ function App() {
               method: 'wallet_addEthereumChain',
               params: [TARGET_NETWORK],
             });
-          } catch (addError) {
+          } catch {
             setStatus({ type: 'error', message: 'Failed to add Monad network.' });
           }
         } else {
@@ -216,7 +238,6 @@ function App() {
     }
 
     setIsMinting(true);
-    setIsMinting(true);
 
     try {
       setStatus({ type: 'waiting', message: 'Waiting for confirmation...' });
@@ -226,7 +247,7 @@ function App() {
       const totalValue = singlePrice * BigInt(repeatCount);
 
       // Generate custom inscription data for the batch
-      const customDataString = `data:application/json,{"p":"mon-20","op":"mint","tick":"nado","amt":"${totalAmountToMint}"}`;
+      const customDataString = `data:application/json,{"p":"mon-20","op":"mint","tick":"rave","amt":"${totalAmountToMint}"}`;
       const hexData = ethers.hexlify(ethers.toUtf8Bytes(customDataString));
 
       const txRequest = {
@@ -244,7 +265,10 @@ function App() {
       await tx.wait();
 
       // Refresh real minted count from chain
-      await fetchTotalMinted();
+      const updatedMinted = await fetchTotalMinted();
+      if (updatedMinted !== null) {
+        setTotalMinted(updatedMinted);
+      }
 
       setMyInscriptions(prev => [
         {
@@ -255,7 +279,7 @@ function App() {
         ...prev
       ]);
 
-      setStatus({ type: 'success', message: `Success! ${totalAmountToMint.toLocaleString()} nado Minted` });
+      setStatus({ type: 'success', message: `Success! ${totalAmountToMint.toLocaleString()} rave Minted` });
 
     } catch (err) {
       console.error(err);
@@ -325,12 +349,12 @@ function App() {
           <div className="mint-card-new">
             <div className="mint-card-top">
               <span className="minting-label">MINTING</span>
-              <span className="minting-ticker">$nado</span>
+              <span className="minting-ticker">$rave</span>
             </div>
 
             <div className="progress-text-row">
               <span className="progress-percentage">{totalMinted > 0 ? ((totalMinted / TOTAL_SUPPLY) * 100).toFixed(4) : 0}%</span>
-              <span className="progress-numbers">{totalMinted.toLocaleString()} / {TOTAL_SUPPLY.toLocaleString()} nado</span>
+              <span className="progress-numbers">{totalMinted.toLocaleString()} / {TOTAL_SUPPLY.toLocaleString()} rave</span>
             </div>
             <div className="card-progress-container">
               <div
@@ -372,7 +396,7 @@ function App() {
                 {`{
   "p": "mon-20",
   "op": "mint",
-  "tick": "nado",
+  "tick": "rave",
   "amt": "${repeatCount * 1000}"
 }`}
               </pre>
@@ -381,7 +405,7 @@ function App() {
             <div className="fee-summary-box">
               <div className="fee-row">
                 <span>Total Tokens</span>
-                <span>{repeatCount} × 1,000 = {(repeatCount * 1000).toLocaleString()} nado</span>
+                <span>{repeatCount} × 1,000 = {(repeatCount * 1000).toLocaleString()} rave</span>
               </div>
               <div className="fee-row">
                 <span>Protocol Fee</span>
@@ -420,12 +444,12 @@ function App() {
             <div className="inscriptions-page-header">
               <h2 className="inscriptions-header">My Inscriptions</h2>
               <div className="total-pepo-badge">
-                Total Balance: {myInscriptions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} nado              </div>
+                Total Balance: {myInscriptions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} rave              </div>
             </div>
 
             {myInscriptions.length === 0 ? (
               <div className="empty-state">
-                <p>You haven't minted any nado yet.</p>
+                <p>You haven't minted any rave yet.</p>
                 <button className="wallet-btn" onClick={() => setActiveTab('mint')}>Go Mint</button>
               </div>
             ) : (
@@ -433,7 +457,7 @@ function App() {
                 {myInscriptions.map((inc, index) => (
                   <div key={index} className="inscription-item">
                     <div className="inscription-info">
-                      <span className="inscription-amount">{inc.amount} nado</span>
+                      <span className="inscription-amount">{inc.amount} rave</span>
                       <span className="inscription-hash">
                         Tx: <a href={`https://monadvision.com/tx/${inc.hash}`} target="_blank" rel="noopener noreferrer">
                           {formatAddress(inc.hash)}
