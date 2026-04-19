@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
-import { Wallet, CheckCircle, AlertCircle } from 'lucide-react';
+import { Wallet, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
 
 const MONAD_CHAIN_ID = '0x8f'; // 143 in Hex
 const TARGET_NETWORK = {
@@ -182,6 +182,15 @@ function App() {
     }
   };
 
+  const disconnectWallet = () => {
+    setAccount('');
+    setSigner(null);
+    setProvider(null);
+    setBalance('0.00');
+    setStatus({ type: '', message: 'Wallet disconnected' });
+    setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+  };
+
   const checkAndSwitchNetwork = async (prov) => {
     const net = await prov.getNetwork();
     const currentChainId = '0x' + net.chainId.toString(16);
@@ -328,9 +337,10 @@ function App() {
             <div className="wallet-balance">
               {balance} MON
             </div>
-            <div className="wallet-address" onClick={connectWallet}>
+            <div className="wallet-address" onClick={disconnectWallet} title="Disconnect Wallet">
               {formatAddress(account)}
               {network && network.chainId !== 143n && ' (Wrong Net)'}
+              <LogOut size={16} style={{ marginLeft: '8px', opacity: 0.7 }} />
             </div>
           </div>
         ) : (
