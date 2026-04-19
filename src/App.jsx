@@ -313,7 +313,7 @@ function App() {
   return (
     <div className="app-container">
       <header>
-        <div className="logo">
+        <div className="logo" onClick={() => setActiveTab('mint')}>
           Monad Inscription
         </div>
 
