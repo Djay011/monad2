@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
-import { Wallet, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
+import { Wallet, CheckCircle, AlertCircle, LogOut, Zap, Shield, Layers, Globe, Rocket, Target } from 'lucide-react';
 
 const MONAD_CHAIN_ID = '0x8f'; // 143 in Hex
 const TARGET_NETWORK = {
@@ -41,7 +41,28 @@ function App() {
     }
   });
   const [repeatCount, setRepeatCount] = useState(1);
-  const [activeTab, setActiveTab] = useState('mint'); // 'mint' or 'inscriptions'
+
+  const getInitialTab = () => {
+    const path = window.location.pathname;
+    if (path === '/My-Inscriptions') return 'inscriptions';
+    if (path === '/mint') return 'mint';
+    return 'about'; // Default to about for / or unknown paths
+  };
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint' };
+    window.history.pushState(null, '', pathMap[tab] || '/');
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(getInitialTab());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const [isMinting, setIsMinting] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' }); // type: 'waiting', 'success', 'error'
@@ -313,45 +334,53 @@ function App() {
   return (
     <div className="app-container">
       <header>
-        <div className="logo" onClick={() => setActiveTab('mint')}>
-          Monad Inscription
+        <div className="logo" onClick={() => handleTabChange('about')}>
+          <img src="/logo.png" alt="Monad Logo" className="logo-img" />
+          Monad Inscriptions
         </div>
 
         <nav className="header-nav">
           <a
-            href="#"
+            href="/mint"
             className={`nav-link ${activeTab === 'mint' ? 'active' : ''}`}
-            onClick={(e) => { e.preventDefault(); setActiveTab('mint'); }}
+            onClick={(e) => { e.preventDefault(); handleTabChange('mint'); }}
           >Mint</a>
           <a
-            href="#"
+            href="/My-Inscriptions"
             className={`nav-link ${activeTab === 'inscriptions' ? 'active' : ''}`}
-            onClick={(e) => { e.preventDefault(); setActiveTab('inscriptions'); }}
+            onClick={(e) => { e.preventDefault(); handleTabChange('inscriptions'); }}
           >My Inscriptions</a>
           <span className="nav-link disabled">Deploy <span className="soon-badge">soon</span></span>
           <span className="nav-link disabled">Marketplace <span className="soon-badge">soon</span></span>
         </nav>
 
-        {account ? (
-          <div className="wallet-info-container">
-            <div className="wallet-balance">
-              {balance} MON
+        <div className="header-right">
+          <a href="https://x.com/MonadInscribe" target="_blank" rel="noopener noreferrer" className="x-link">
+            <svg viewBox="0 0 1200 1227" fill="currentColor" width="18" height="18">
+              <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.854V687.828Z" />
+            </svg>
+          </a>
+          {account ? (
+            <div className="wallet-info-container">
+              <div className="wallet-balance">
+                {balance} MON
+              </div>
+              <div className="wallet-address" onClick={disconnectWallet} title="Disconnect Wallet">
+                {formatAddress(account)}
+                {network && network.chainId !== 143n && ' (Wrong Net)'}
+                <LogOut size={16} style={{ marginLeft: '8px', opacity: 0.7 }} />
+              </div>
             </div>
-            <div className="wallet-address" onClick={disconnectWallet} title="Disconnect Wallet">
-              {formatAddress(account)}
-              {network && network.chainId !== 143n && ' (Wrong Net)'}
-              <LogOut size={16} style={{ marginLeft: '8px', opacity: 0.7 }} />
-            </div>
-          </div>
-        ) : (
-          <button
-            className="wallet-btn"
-            onClick={connectWallet}
-          >
-            <Wallet size={18} />
-            Connect Wallet
-          </button>
-        )}
+          ) : (
+            <button
+              className="wallet-btn"
+              onClick={connectWallet}
+            >
+              <Wallet size={18} />
+              Connect Wallet
+            </button>
+          )}
+        </div>
       </header>
 
       <main>
@@ -460,7 +489,7 @@ function App() {
             {myInscriptions.length === 0 ? (
               <div className="empty-state">
                 <p>You haven't minted any rave yet.</p>
-                <button className="wallet-btn" onClick={() => setActiveTab('mint')}>Go Mint</button>
+                <button className="wallet-btn" onClick={() => handleTabChange('mint')}>Go Mint</button>
               </div>
             ) : (
               <div className="inscriptions-list">
@@ -481,10 +510,184 @@ function App() {
             )}
           </div>
         )}
+
+        {activeTab === 'about' && (
+          <div className="about-page">
+            <div className="about-hero">
+              <div className="about-hero-glow"></div>
+              <img src="/logo.png" alt="Monad Inscriptions" className="about-logo" />
+              <h1 className="about-title">Monad Inscriptions</h1>
+              <p className="about-subtitle">
+                The first MON-20 inscription protocol built on the Monad blockchain.
+                Mint, deploy, and trade on-chain digital assets at lightning speed.
+              </p>
+              <button className="about-cta" onClick={() => handleTabChange('mint')}>
+                <Rocket size={18} />
+                Start Minting
+              </button>
+            </div>
+
+            <div className="about-section">
+              <h2 className="about-section-title">
+                <Target size={22} />
+                What are MON-20 Inscriptions?
+              </h2>
+              <p className="about-text">
+                MON-20 is an experimental inscription standard on the Monad blockchain, inspired by BRC-20 
+                on Bitcoin. It allows users to deploy, mint, and transfer fungible tokens by inscribing 
+                JSON data directly onto transactions. Each inscription is immutable and permanently recorded 
+                on-chain, creating a transparent and verifiable record of every token operation.
+              </p>
+              
+              <div className="inscription-visual">
+                <div className="visual-header">
+                  <span className="visual-title">· INSCRIPTION · MON-20 · IMMUTABLE</span>
+                </div>
+                <div className="visual-body">
+                  <div className="line-numbers">
+                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+                  </div>
+                  <pre className="code-content">
+                    <code>
+                      {"{\n"}
+                      {"  \"p\": \""} <span className="syntax-string">mon-20</span> {"\",\n"}
+                      {"  \"op\": \""} <span className="syntax-string">mint</span> {"\",\n"}
+                      {"  \"tick\": \""} <span className="syntax-string">MON</span> {"\",\n"}
+                      {"  \"amt\": \""} <span className="syntax-string">1000</span> {"\"\n"}
+                      {"}"}
+                    </code>
+                  </pre>
+                </div>
+                <div className="visual-footer">
+                  <span className="status-dot"></span>
+                  <span className="status-text">SEALED · MON</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="about-features-grid">
+              <div className="about-feature-card">
+                <div className="feature-icon-wrap">
+                  <Zap size={24} />
+                </div>
+                <h3>Parallel Execution</h3>
+                <p>
+                  Unlike traditional EVM chains that process transactions sequentially, Monad uses 
+                  optimistic parallel execution — identifying non-conflicting transactions and processing 
+                  them simultaneously for massive throughput gains.
+                </p>
+              </div>
+              <div className="about-feature-card">
+                <div className="feature-icon-wrap">
+                  <Shield size={24} />
+                </div>
+                <h3>MonadBFT Consensus</h3>
+                <p>
+                  A custom-built, pipelined Byzantine Fault Tolerant consensus mechanism that achieves 
+                  sub-second block times and near-instant finality, making it ideal for high-frequency 
+                  applications.
+                </p>
+              </div>
+              <div className="about-feature-card">
+                <div className="feature-icon-wrap">
+                  <Layers size={24} />
+                </div>
+                <h3>MonadDB</h3>
+                <p>
+                  A specialized, high-performance database layer designed specifically for the I/O demands 
+                  of parallel transaction processing and efficient state management on-chain.
+                </p>
+              </div>
+              <div className="about-feature-card">
+                <div className="feature-icon-wrap">
+                  <Globe size={24} />
+                </div>
+                <h3>Full EVM Compatibility</h3>
+                <p>
+                  Monad is byte-for-byte compatible with the Ethereum Virtual Machine. Existing smart contracts, 
+                  wallets, and developer tooling work seamlessly without any modifications.
+                </p>
+              </div>
+            </div>
+
+            <div className="about-section">
+              <h2 className="about-section-title">
+                <Globe size={22} />
+                What is Monad?
+              </h2>
+              <p className="about-text">
+                Monad is a high-performance Layer-1 blockchain that is fully compatible with the 
+                Ethereum Virtual Machine (EVM). Launched in November 2025, Monad addresses the scalability 
+                and performance limitations found in existing EVM-compatible chains by enabling significantly 
+                higher throughput and lower latency — all while maintaining the security and decentralization 
+                of a Layer-1 network.
+              </p>
+            </div>
+
+            <div className="about-section">
+              <h2 className="about-section-title">
+                <Rocket size={22} />
+                Our Mission
+              </h2>
+              <p className="about-text">
+                Monad Inscriptions aims to be the go-to platform for the MON-20 ecosystem. Our goals include:
+              </p>
+              <div className="about-goals-list">
+                <div className="about-goal-item">
+                  <span className="goal-number">01</span>
+                  <div>
+                    <h4>Fair & Transparent Minting</h4>
+                    <p>Provide a clean, user-friendly interface for minting MON-20 tokens with real-time supply tracking and on-chain verification.</p>
+                  </div>
+                </div>
+                <div className="about-goal-item">
+                  <span className="goal-number">02</span>
+                  <div>
+                    <h4>Token Deployment</h4>
+                    <p>Enable anyone to deploy their own MON-20 tokens with customizable parameters — coming soon to the platform.</p>
+                  </div>
+                </div>
+                <div className="about-goal-item">
+                  <span className="goal-number">03</span>
+                  <div>
+                    <h4>Decentralized Marketplace</h4>
+                    <p>Build a peer-to-peer marketplace for trading MON-20 inscriptions, bringing liquidity and price discovery to the ecosystem.</p>
+                  </div>
+                </div>
+                <div className="about-goal-item">
+                  <span className="goal-number">04</span>
+                  <div>
+                    <h4>Community Driven</h4>
+                    <p>Foster a vibrant community of creators and collectors on Monad, empowering users to shape the future of on-chain inscriptions.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="about-stats-bar">
+              <div className="about-stat">
+                <span className="about-stat-value">10,000+</span>
+                <span className="about-stat-label">TPS Capacity</span>
+              </div>
+              <div className="about-stat">
+                <span className="about-stat-value">&lt;1s</span>
+                <span className="about-stat-label">Block Time</span>
+              </div>
+              <div className="about-stat">
+                <span className="about-stat-value">100%</span>
+                <span className="about-stat-label">EVM Compatible</span>
+              </div>
+              <div className="about-stat">
+                <span className="about-stat-value">$MON</span>
+                <span className="about-stat-label">Native Token</span>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer>
-        <p>Built for the Monad Ecosystem • <a href="#" className="link">View Contract</a></p>
+        <p>Built for the Monad Ecosystem</p>
       </footer>
     </div>
   );
