@@ -46,13 +46,14 @@ function App() {
     const path = window.location.pathname;
     if (path === '/My-Inscriptions') return 'inscriptions';
     if (path === '/mint') return 'mint';
+    if (path === '/marketplace') return 'marketplace';
     return 'about'; // Default to about for / or unknown paths
   };
   const [activeTab, setActiveTab] = useState(getInitialTab);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint' };
+    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint', marketplace: '/marketplace' };
     window.history.pushState(null, '', pathMap[tab] || '/');
   };
 
@@ -71,17 +72,17 @@ function App() {
     try {
       const rpcProvider = new ethers.JsonRpcProvider(TARGET_NETWORK.rpcUrls[0]);
       const bal = await rpcProvider.getBalance(RECEIVER_WALLET);
-      const balanceInMon = ethers.formatEther(bal);
 
       let realTotalMinted = INITIAL_MINTED;
 
-      // Only calculate from balance if price > 0
+      // Only calculate from balance if price > 0 — use BigInt math to avoid float precision loss
       if (Number(MINT_PRICE) > 0) {
-        // Subtract old balance so we only count NEW mints
-        let newBalance = Number(balanceInMon) - INITIAL_WALLET_BALANCE;
-        if (newBalance < 0) newBalance = 0;
+        const initialBalanceWei = ethers.parseEther(INITIAL_WALLET_BALANCE.toString());
+        const priceWei = ethers.parseEther(MINT_PRICE);
+        let newBalanceWei = bal - initialBalanceWei;
+        if (newBalanceWei < 0n) newBalanceWei = 0n;
 
-        const mintsFromBalance = Math.floor(newBalance / Number(MINT_PRICE));
+        const mintsFromBalance = Number(newBalanceWei / priceWei);
         realTotalMinted += (mintsFromBalance * MINT_AMOUNT);
       }
 
@@ -158,9 +159,11 @@ function App() {
       }
     });
 
+    const handleChainChanged = () => window.location.reload();
+
     if (window.ethereum) {
       window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', () => window.location.reload());
+      window.ethereum.on('chainChanged', handleChainChanged);
 
       // Initial check if already connected — deferred to avoid sync setState
       queueMicrotask(() => checkConnection());
@@ -170,6 +173,7 @@ function App() {
       isMounted = false;
       if (window.ethereum) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
       }
     };
   }, [fetchTotalMinted, handleAccountsChanged, checkConnection]);
@@ -208,6 +212,7 @@ function App() {
     setSigner(null);
     setProvider(null);
     setBalance('0.00');
+    setNetwork(null);
     setStatus({ type: '', message: 'Wallet disconnected' });
     setTimeout(() => setStatus({ type: '', message: '' }), 3000);
   };
@@ -253,7 +258,7 @@ function App() {
 
     const totalAmountToMint = MINT_AMOUNT * repeatCount;
     if (totalMinted + totalAmountToMint > TOTAL_SUPPLY) {
-      const maxAllowed = (TOTAL_SUPPLY - totalMinted) / MINT_AMOUNT;
+      const maxAllowed = Math.floor((TOTAL_SUPPLY - totalMinted) / MINT_AMOUNT);
       setStatus({ type: 'error', message: `Exceeds limit! Only ${maxAllowed} repeats left.` });
       return;
     }
@@ -262,8 +267,8 @@ function App() {
     const net = await provider.getNetwork();
     const currentChainId = '0x' + net.chainId.toString(16);
     if (currentChainId.toLowerCase() !== MONAD_CHAIN_ID.toLowerCase()) {
+      setStatus({ type: 'waiting', message: 'Please switch to Monad network and try again.' });
       await checkAndSwitchNetwork(provider);
-      // Wait for network switch to complete
       return;
     }
 
@@ -351,7 +356,11 @@ function App() {
             onClick={(e) => { e.preventDefault(); handleTabChange('inscriptions'); }}
           >My Inscriptions</a>
           <span className="nav-link disabled">Deploy <span className="soon-badge">soon</span></span>
-          <span className="nav-link disabled">Marketplace <span className="soon-badge">soon</span></span>
+          <a
+            href="/marketplace"
+            className={`nav-link ${activeTab === 'marketplace' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}
+          >Marketplace</a>
         </nav>
 
         <div className="header-right">
@@ -405,7 +414,7 @@ function App() {
             <div className="input-row">
               <div className="input-field-group">
                 <label>AMOUNT PER MINT</label>
-                <input type="text" value="1000" readOnly />
+                <input type="text" value={MINT_AMOUNT.toLocaleString()} readOnly />
               </div>
               <div className="input-field-group">
                 <label>REPEAT (1 – 5000)</label>
@@ -426,7 +435,7 @@ function App() {
             </div>
 
             <p className="remaining-info">
-              {(TOTAL_SUPPLY - totalMinted).toLocaleString()} remaining · limit 1,000
+              {(TOTAL_SUPPLY - totalMinted).toLocaleString()} remaining · limit {MINT_AMOUNT.toLocaleString()}
             </p>
 
             <div className="calldata-preview">
@@ -436,7 +445,7 @@ function App() {
   "p": "mon-20",
   "op": "mint",
   "tick": "rave",
-  "amt": "${repeatCount * 1000}"
+  "amt": "${repeatCount * MINT_AMOUNT}"
 }`}
               </pre>
             </div>
@@ -444,7 +453,7 @@ function App() {
             <div className="fee-summary-box">
               <div className="fee-row">
                 <span>Total Tokens</span>
-                <span>{repeatCount} × 1,000 = {(repeatCount * 1000).toLocaleString()} rave</span>
+                <span>{repeatCount} × {MINT_AMOUNT.toLocaleString()} = {(repeatCount * MINT_AMOUNT).toLocaleString()} rave</span>
               </div>
               <div className="fee-row">
                 <span>Protocol Fee</span>
@@ -483,7 +492,8 @@ function App() {
             <div className="inscriptions-page-header">
               <h2 className="inscriptions-header">My Inscriptions</h2>
               <div className="total-pepo-badge">
-                Total Balance: {myInscriptions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} rave              </div>
+                Total Balance: {myInscriptions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} rave
+              </div>
             </div>
 
             {myInscriptions.length === 0 ? (
@@ -508,6 +518,23 @@ function App() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'marketplace' && (
+          <div className="about-page">
+            <div className="about-hero">
+              <div className="about-hero-glow"></div>
+              <h1 className="about-title">Marketplace</h1>
+              <p className="about-subtitle">
+                The MON-20 marketplace is under construction. Soon you'll be able to list, buy,
+                and trade rave inscriptions peer-to-peer on Monad.
+              </p>
+              <button className="about-cta" onClick={() => handleTabChange('mint')}>
+                <Rocket size={18} />
+                Mint in the meantime
+              </button>
+            </div>
           </div>
         )}
 
