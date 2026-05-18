@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
-import { Wallet, CheckCircle, AlertCircle, LogOut, Zap, Shield, Layers, Globe, Rocket, Target } from 'lucide-react';
+import { Wallet, CheckCircle, AlertCircle, LogOut, Zap, Shield, Layers, Globe, Rocket, Target, Search, ExternalLink, Copy, Hash, Clock, TrendingUp, Coins, Sparkles } from 'lucide-react';
+import { api, subscribeEvents, rowToActivity } from './api';
+import Marketplace from './Marketplace';
+import ShaderBackground from './components/ShaderBackground';
+import {
+  useInjectedWallets, WalletPicker,
+  rememberWallet, rememberedWallet, forgetWallet,
+  switchOrAddChain,
+} from './wallets';
 
 const MONAD_CHAIN_ID = '0x8f'; // 143 in Hex
 const TARGET_NETWORK = {
@@ -16,13 +24,15 @@ const TARGET_NETWORK = {
 };
 
 // Contract & Mint Details
-const RECEIVER_WALLET = '0xc3426581b4531B0339410c39FA14AF640fBe3aD8';
-const MINT_PRICE = '0.00002'; // 0.00002 MON
-const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"rave","amt":"1000"}';
+const RECEIVER_WALLET = '0x6fC09727F83Ef23782cF80Cd11e1bda534532267';
+const MINT_PRICE = '0.002'; // 0.002 MON
+const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"BOB","amt":"1000"}';
 const TOTAL_SUPPLY = 21000000;
 const MINT_AMOUNT = 1000;
+const TICK = 'BOB';
 const INITIAL_MINTED = 0; // Set your starting progress here (e.g. 10M)
-const INITIAL_WALLET_BALANCE = 8.124440917972837; // Current wallet balance as of today
+// Auto-baselines to the receiver wallet's current balance on first load so supply starts at 0.
+const BASELINE_KEY = `bob_baseline_balance_${RECEIVER_WALLET}`;
 
 function App() {
   const [provider, setProvider] = useState(null);
@@ -30,16 +40,39 @@ function App() {
   const [account, setAccount] = useState('');
   const [balance, setBalance] = useState('0.00');
   const [network, setNetwork] = useState(null);
+  // Multi-wallet (EIP-6963) state
+  const wallets = useInjectedWallets();
+  const [walletProvider, setWalletProvider] = useState(null); // raw EIP-1193 provider
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const [totalMinted, setTotalMinted] = useState(0); // Will be updated with real on-chain data
-  const [myInscriptions, setMyInscriptions] = useState(() => {
+  // Hydrate from localStorage so a page refresh doesn't reset to 0 while the
+  // backend indexer is still catching up. The indexer is the source of truth;
+  // the cache only prevents a transient "backwards" jump on reload.
+  const TOTAL_CACHE_KEY = `mon20_total_minted_${TICK}`;
+  const ACTIVITY_CACHE_KEY = `mon20_recent_activity_${TICK}`;
+  const readCachedTotal = () => {
     try {
-      const saved = localStorage.getItem('rave_inscriptions');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+      const v = Number(localStorage.getItem(TOTAL_CACHE_KEY));
+      return Number.isFinite(v) && v > 0 ? Math.min(v, TOTAL_SUPPLY) : 0;
+    } catch { return 0; }
+  };
+  const readCachedActivity = () => {
+    try {
+      const raw = localStorage.getItem(ACTIVITY_CACHE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.slice(0, 200) : [];
+    } catch { return []; }
+  };
+  const [totalMinted, setTotalMinted] = useState(readCachedTotal); // hydrated from cache
+  const [recentActivity, setRecentActivity] = useState(readCachedActivity);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [, setNowTick] = useState(0); // forces re-render so relative times update live
+
+  // ── Wallet-specific balance from blockchain (source of truth) ──────────
+  // Keyed by wallet address so different wallets see their own data.
+  const [userBalance, setUserBalance] = useState(0);
+  const [userMintsList, setUserMintsList] = useState([]); // inscriptions the user minted
   const [repeatCount, setRepeatCount] = useState(1);
 
   const getInitialTab = () => {
@@ -65,38 +98,74 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Re-render every second so relative timestamps stay fresh
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const [isMinting, setIsMinting] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' }); // type: 'waiting', 'success', 'error'
 
+  // Load recent on-chain mints from the backend indexer (source of truth)
+  const loadRecentFromApi = useCallback(async () => {
+    try {
+      const data = await api.recentMints(50);
+      const items = (data.items || []).map(rowToActivity);
+      // Only overwrite the cached list when the backend actually has data,
+      // otherwise keep showing the cached items so a refresh isn't blank
+      // while the indexer is still warming up.
+      if (items.length > 0) {
+        setRecentActivity(items);
+        try { localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(items.slice(0, 200))); } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to load recent mints:', err);
+    }
+  }, [ACTIVITY_CACHE_KEY]);
+
+  // Total minted now comes straight from the indexer DB (real on-chain truth).
   const fetchTotalMinted = useCallback(async () => {
     try {
-      const rpcProvider = new ethers.JsonRpcProvider(TARGET_NETWORK.rpcUrls[0]);
-      const bal = await rpcProvider.getBalance(RECEIVER_WALLET);
-
-      let realTotalMinted = INITIAL_MINTED;
-
-      // Only calculate from balance if price > 0 — use BigInt math to avoid float precision loss
-      if (Number(MINT_PRICE) > 0) {
-        const initialBalanceWei = ethers.parseEther(INITIAL_WALLET_BALANCE.toString());
-        const priceWei = ethers.parseEther(MINT_PRICE);
-        let newBalanceWei = bal - initialBalanceWei;
-        if (newBalanceWei < 0n) newBalanceWei = 0n;
-
-        const mintsFromBalance = Number(newBalanceWei / priceWei);
-        realTotalMinted += (mintsFromBalance * MINT_AMOUNT);
-      }
-
-      if (realTotalMinted > TOTAL_SUPPLY) realTotalMinted = TOTAL_SUPPLY;
-      return realTotalMinted;
+      const stats = await api.token(TICK);
+      let total = INITIAL_MINTED + (Number(stats.total_minted) || 0);
+      if (total > TOTAL_SUPPLY) total = TOTAL_SUPPLY;
+      return total;
     } catch (err) {
-      console.error("Failed to fetch real minted amount", err);
+      console.error('Failed to fetch token stats from indexer:', err);
       return null;
     }
   }, []);
 
-  const checkConnection = useCallback(async () => {
+  // ── Load wallet balance from the indexer API (blockchain source of truth) ─
+  const loadUserBalance = useCallback(async () => {
+    if (!account) return;
     try {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const data = await api.balance(account);
+      const entry = (data.balances || []).find(b => b.tick === TICK);
+      const bal = entry ? Number(entry.balance) : 0;
+      setUserBalance(bal);
+      // Cache per-wallet so refresh doesn't flash to 0
+      const key = `mon20_balance_${account.toLowerCase()}_${TICK}`;
+      try { localStorage.setItem(key, String(bal)); } catch {}
+    } catch (err) {
+      console.error('Balance fetch failed:', err);
+    }
+  }, [account]);
+
+  // Persist totalMinted to localStorage whenever it grows so a refresh has
+  // an instant, accurate baseline even if the backend hasn't responded yet.
+  useEffect(() => {
+    if (totalMinted > 0) {
+      try { localStorage.setItem(TOTAL_CACHE_KEY, String(totalMinted)); } catch {}
+    }
+  }, [totalMinted, TOTAL_CACHE_KEY]);
+
+  const checkConnection = useCallback(async (eip1193) => {
+    const inj = eip1193 || walletProvider;
+    if (!inj) return;
+    try {
+      const browserProvider = new ethers.BrowserProvider(inj);
       const accounts = await browserProvider.listAccounts();
       if (accounts.length > 0) {
         setProvider(browserProvider);
@@ -112,7 +181,7 @@ function App() {
     } catch (err) {
       console.error("Failed to check connection", err);
     }
-  }, []);
+  }, [walletProvider]);
 
   const handleAccountsChanged = useCallback((accounts) => {
     if (accounts.length === 0) {
@@ -125,21 +194,23 @@ function App() {
     }
   }, [checkConnection]);
 
-  // Compute totalMinted from local inscriptions when price is 0 (derived state)
+  // User's mints derived from the dedicated user mints list (not global activity).
+  const combinedMyInscriptions = useMemo(() => {
+    if (!account) return [];
+    return userMintsList
+      .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  }, [userMintsList, account]);
+
+  // Compute totalMinted from on-chain activity when price is 0 (derived state)
   const localTotalMinted = useMemo(() => {
     if (Number(MINT_PRICE) === 0) {
-      const localMints = myInscriptions.reduce((acc, curr) => acc + curr.amount, 0);
-      let newTotal = INITIAL_MINTED + localMints;
+      const onChainMints = recentActivity.reduce((acc, curr) => acc + curr.amount, 0);
+      let newTotal = INITIAL_MINTED + onChainMints;
       if (newTotal > TOTAL_SUPPLY) newTotal = TOTAL_SUPPLY;
       return newTotal;
     }
     return null;
-  }, [myInscriptions]);
-
-  // Save inscriptions to localStorage
-  useEffect(() => {
-    localStorage.setItem('rave_inscriptions', JSON.stringify(myInscriptions));
-  }, [myInscriptions]);
+  }, [recentActivity]);
 
   // Sync localTotalMinted into state when price is 0
   useEffect(() => {
@@ -149,98 +220,222 @@ function App() {
     }
   }, [localTotalMinted]);
 
-  // Fetch real minted amount and set up event listeners on mount
+  // Source of truth = backend indexer. Initial load + WS live updates + polling fallback.
   useEffect(() => {
     let isMounted = true;
+    setIsLoadingHistory(true);
 
+    // On initial load, never ratchet the bar BACKWARDS below the cached
+    // value — the indexer may briefly return 0 right after a backend restart.
     fetchTotalMinted().then((result) => {
-      if (isMounted && result !== null) {
-        setTotalMinted(result);
-      }
+      if (isMounted && result !== null) setTotalMinted(prev => Math.max(prev, result));
+    });
+
+    loadRecentFromApi().finally(() => {
+      if (isMounted) setIsLoadingHistory(false);
+    });
+
+    const refreshAll = () => {
+      loadRecentFromApi();
+      // Use Math.max so the 15s poll never ratchets the bar back down past
+      // an optimistic local bump made after a fresh mint.
+      fetchTotalMinted().then(t => {
+        if (isMounted && t !== null) setTotalMinted(prev => Math.max(prev, t));
+      });
+    };
+
+    // Polling fallback (in case WS drops)
+    const pollTimer = setInterval(refreshAll, 15000);
+
+    // Also poll wallet balance every 15s to stay in sync
+    const balancePollTimer = setInterval(() => {
+      if (isMounted) loadUserBalance();
+    }, 15000);
+
+    // WebSocket live feed: handles mints, marketplace events, and balance changes
+    const unsubscribe = subscribeEvents({
+      onMints: (items) => {
+        if (!isMounted || !items.length) return;
+        const mapped = items.map(rowToActivity);
+        setRecentActivity(prev => {
+          const seen = new Set(prev.map(e => e.hash));
+          const merged = [...mapped.filter(e => !seen.has(e.hash)), ...prev];
+          merged.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+          return merged.slice(0, 200);
+        });
+        fetchTotalMinted().then(t => {
+          if (isMounted && t !== null) setTotalMinted(prev => Math.max(prev, t));
+        });
+        // If any new mints belong to the connected wallet, refresh balance
+        if (account) {
+          const lower = account.toLowerCase();
+          if (mapped.some(e => e.from === lower)) {
+            loadUserBalance();
+          }
+        }
+      },
+      onBalanceUpdate: (data) => {
+        if (!isMounted || !account) return;
+        const lower = account.toLowerCase();
+        if (data.seller === lower || data.buyer === lower) {
+          // Marketplace sale affected this wallet — refresh balance
+          loadUserBalance();
+        }
+      },
+      onMarketEvent: (_data) => {
+        // Could trigger marketplace refresh — handled by Marketplace component
+      },
     });
 
     const handleChainChanged = () => window.location.reload();
-
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
-
-      // Initial check if already connected — deferred to avoid sync setState
-      queueMicrotask(() => checkConnection());
+    const inj = walletProvider;
+    if (inj && typeof inj.on === 'function') {
+      inj.on('accountsChanged', handleAccountsChanged);
+      inj.on('chainChanged', handleChainChanged);
+      queueMicrotask(() => checkConnection(inj));
     }
 
     return () => {
       isMounted = false;
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      clearInterval(pollTimer);
+      clearInterval(balancePollTimer);
+      unsubscribe();
+      if (inj && typeof inj.removeListener === 'function') {
+        inj.removeListener('accountsChanged', handleAccountsChanged);
+        inj.removeListener('chainChanged', handleChainChanged);
       }
     };
-  }, [fetchTotalMinted, handleAccountsChanged, checkConnection]);
+  }, [fetchTotalMinted, handleAccountsChanged, checkConnection, loadRecentFromApi, walletProvider, loadUserBalance, account]);
 
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      setStatus({ type: 'error', message: 'Please install MetaMask to mint.' });
+  // When wallet connects, load the full portfolio (balance + mint history).
+  useEffect(() => {
+    if (!account) {
+      setUserBalance(0);
+      setUserMintsList([]);
       return;
     }
+    let cancelled = false;
+    setIsLoadingHistory(true);
 
+    // Hydrate balance from per-wallet cache immediately (prevents 0-flash)
+    const cacheKey = `mon20_balance_${account.toLowerCase()}_${TICK}`;
+    try {
+      const cached = Number(localStorage.getItem(cacheKey));
+      if (Number.isFinite(cached) && cached > 0) setUserBalance(cached);
+    } catch {}
+
+    // Fetch full portfolio from API
+    api.walletPortfolio(account)
+      .then((data) => {
+        if (cancelled) return;
+        // Update balance from blockchain
+        const entry = (data.balances || []).find(b => b.tick === TICK);
+        const bal = entry ? Number(entry.balance) : 0;
+        setUserBalance(bal);
+        try { localStorage.setItem(cacheKey, String(bal)); } catch {}
+
+        // Update user's mint history
+        const mapped = (data.mints || []).map(rowToActivity);
+        setUserMintsList(mapped);
+
+        // Also merge into global activity feed
+        setRecentActivity(prev => {
+          const seen = new Set(prev.map(e => e.hash));
+          const merged = [...prev, ...mapped.filter(e => !seen.has(e.hash))];
+          merged.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+          return merged.slice(0, 500);
+        });
+      })
+      .catch((err) => console.error('Load wallet portfolio failed:', err))
+      .finally(() => { if (!cancelled) setIsLoadingHistory(false); });
+    return () => { cancelled = true; };
+  }, [account]);
+
+  // Connect using a specific injected EIP-1193 provider (chosen via picker).
+  const connectWith = useCallback(async (walletInfo) => {
+    const inj = walletInfo?.provider;
+    if (!inj) {
+      setStatus({ type: 'error', message: 'No wallet selected.' });
+      return;
+    }
     try {
       setStatus({ type: '', message: '' });
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
-      await browserProvider.send("eth_requestAccounts", []);
+      const browserProvider = new ethers.BrowserProvider(inj);
+      await browserProvider.send('eth_requestAccounts', []);
 
       const currentSigner = await browserProvider.getSigner();
       const address = await currentSigner.getAddress();
       const net = await browserProvider.getNetwork();
       const bal = await browserProvider.getBalance(address);
 
+      setWalletProvider(inj);
       setProvider(browserProvider);
       setSigner(currentSigner);
       setAccount(address);
       setBalance(Number(ethers.formatEther(bal)).toFixed(4));
       setNetwork(net);
+      rememberWallet(walletInfo.rdns);
 
-      await checkAndSwitchNetwork(browserProvider);
+      await checkAndSwitchNetwork(browserProvider, inj);
     } catch (err) {
-      console.error(err);
-      setStatus({ type: 'error', message: 'Failed to connect wallet.' });
+      console.error('[connectWith] failed:', err);
+      let msg = 'Failed to connect wallet.';
+      if (err?.code === 4001 || err?.code === 'ACTION_REJECTED') msg = 'Connection rejected.';
+      else if (err?.code === -32002) msg = 'Connection request already pending — open your wallet.';
+      else if (err?.message) msg = `Connect failed: ${err.message.slice(0, 120)}`;
+      setStatus({ type: 'error', message: msg });
     }
-  };
+  }, []);
+
+  // Open the picker. If only one wallet is installed, connect directly.
+  const connectWallet = useCallback(async () => {
+    if (wallets.length === 0) {
+      setStatus({ type: 'error', message: 'No EVM wallet detected. Install MetaMask, Rabby, Phantom, etc.' });
+      return;
+    }
+    if (wallets.length === 1) {
+      await connectWith(wallets[0]);
+      return;
+    }
+    setPickerOpen(true);
+  }, [wallets, connectWith]);
+
+  // Auto-reconnect on mount if a wallet was previously chosen.
+  useEffect(() => {
+    const rdns = rememberedWallet();
+    if (!rdns || walletProvider) return;
+    const w = wallets.find(x => x.rdns === rdns);
+    if (!w) return;
+    // Silent: just re-bind the provider; checkConnection will pull existing accounts.
+    setWalletProvider(w.provider);
+  }, [wallets, walletProvider]);
 
   const disconnectWallet = () => {
     setAccount('');
     setSigner(null);
     setProvider(null);
+    setWalletProvider(null);
     setBalance('0.00');
     setNetwork(null);
+    forgetWallet();
     setStatus({ type: '', message: 'Wallet disconnected' });
     setTimeout(() => setStatus({ type: '', message: '' }), 3000);
   };
 
-  const checkAndSwitchNetwork = async (prov) => {
+  const checkAndSwitchNetwork = async (prov, eip1193) => {
+    const inj = eip1193 || walletProvider;
+    if (!inj) return;
     const net = await prov.getNetwork();
     const currentChainId = '0x' + net.chainId.toString(16);
 
     if (currentChainId.toLowerCase() !== MONAD_CHAIN_ID.toLowerCase()) {
       try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: MONAD_CHAIN_ID }],
-        });
-      } catch (switchError) {
-        // This error code indicates that the chain has not been added to MetaMask.
-        if (switchError.code === 4902) {
-          try {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [TARGET_NETWORK],
-            });
-          } catch {
-            setStatus({ type: 'error', message: 'Failed to add Monad network.' });
-          }
-        } else {
-          setStatus({ type: 'error', message: 'Failed to switch to Monad network.' });
-        }
+        await switchOrAddChain(inj, MONAD_CHAIN_ID, TARGET_NETWORK);
+      } catch (err) {
+        const msg = err?.code === 4902
+          ? 'Failed to add Monad network.'
+          : 'Failed to switch to Monad network.';
+        setStatus({ type: 'error', message: msg });
       }
     }
   };
@@ -282,13 +477,18 @@ function App() {
       const totalValue = singlePrice * BigInt(repeatCount);
 
       // Generate custom inscription data for the batch
-      const customDataString = `data:application/json,{"p":"mon-20","op":"mint","tick":"rave","amt":"${totalAmountToMint}"}`;
+      const customDataString = `data:application/json,{"p":"mon-20","op":"mint","tick":"${TICK}","amt":"${totalAmountToMint}"}`;
       const hexData = ethers.hexlify(ethers.toUtf8Bytes(customDataString));
+
+      // Explicitly fetch nonce — some Monad RPCs return malformed responses
+      // when ethers v6 auto-populates, causing 'invalid value for value.nonce'.
+      const nonce = await provider.getTransactionCount(account, 'pending');
 
       const txRequest = {
         to: RECEIVER_WALLET,
         value: totalValue,
-        data: hexData
+        data: hexData,
+        nonce,
       };
 
       // Send the single transaction
@@ -299,32 +499,65 @@ function App() {
       // Wait for confirmation
       await tx.wait();
 
-      // Refresh real minted count from chain
-      const updatedMinted = await fetchTotalMinted();
-      if (updatedMinted !== null) {
-        setTotalMinted(updatedMinted);
-      }
+      // Optimistically grow the progress bar IMMEDIATELY — the indexer
+      // typically lags by one poll cycle, so we don't want to wait for it.
+      setTotalMinted(prev => Math.min(TOTAL_SUPPLY, prev + totalAmountToMint));
 
-      setMyInscriptions(prev => [
-        {
-          hash: tx.hash,
-          amount: totalAmountToMint,
-          time: new Date().toLocaleString()
-        },
-        ...prev
-      ]);
+      // Optimistically bump the wallet balance
+      setUserBalance(prev => prev + totalAmountToMint);
 
-      setStatus({ type: 'success', message: `Success! ${totalAmountToMint.toLocaleString()} rave Minted` });
+      // Optimistic activity insert; the backend WebSocket will replace this
+      // entry (matched by tx hash) once the indexer picks it up.
+      const optimisticEntry = {
+        hash: tx.hash,
+        amount: totalAmountToMint,
+        from: account.toLowerCase(),
+        block: 0,
+        time: new Date().toLocaleString(),
+        timestamp: Math.floor(Date.now() / 1000),
+        tick: TICK,
+      };
+      setRecentActivity(prev => [optimisticEntry, ...prev]);
+      setUserMintsList(prev => [optimisticEntry, ...prev]);
+
+      // Converge to on-chain truth: poll the indexer for up to ~30s, but only
+      // accept a value that is >= our optimistic count so the bar never jumps
+      // backwards if the indexer is still catching up.
+      (async () => {
+        for (let i = 0; i < 15; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const t = await fetchTotalMinted();
+          if (t == null) continue;
+          let stop = false;
+          setTotalMinted(prev => {
+            if (t >= prev) { stop = (t === prev); return t; }
+            return prev; // indexer still behind; keep optimistic value
+          });
+          loadRecentFromApi();
+          loadUserBalance(); // converge wallet balance with blockchain
+          if (stop) break;
+        }
+      })();
+
+      setStatus({ type: 'success', message: `Success! ${totalAmountToMint.toLocaleString()} ${TICK} Minted` });
 
     } catch (err) {
-      console.error(err);
+      console.error('Mint error:', err);
       let errMsg = 'Transaction Failed';
       if (err.code === 'ACTION_REJECTED' || err.info?.error?.code === 4001) {
         errMsg = 'Transaction rejected by user.';
+      } else if (err.code === 'INSUFFICIENT_FUNDS') {
+        errMsg = 'Insufficient MON balance for this mint.';
+      } else if (err.code === 'NETWORK_ERROR') {
+        errMsg = 'Network error. Check your connection / RPC.';
       } else if (err.info?.error?.message) {
         errMsg = err.info.error.message;
+      } else if (err.shortMessage) {
+        errMsg = err.shortMessage;
       } else if (err.reason) {
         errMsg = err.reason;
+      } else if (err.message) {
+        errMsg = err.message.length > 140 ? err.message.slice(0, 140) + '…' : err.message;
       }
       setStatus({ type: 'error', message: `Error: ${errMsg}` });
     }
@@ -336,8 +569,19 @@ function App() {
     return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
   };
 
+  const formatRelativeTime = (timestamp) => {
+    if (!timestamp) return '';
+    const diff = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
+    if (diff < 5) return 'just now';
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+
   return (
     <div className="app-container">
+      {activeTab === 'about' && <ShaderBackground />}
       <header>
         <div className="logo" onClick={() => handleTabChange('about')}>
           <img src="/logo.png" alt="Monad Logo" className="logo-img" />
@@ -394,15 +638,16 @@ function App() {
 
       <main>
         {activeTab === 'mint' && (
+          <div className="mint-layout">
           <div className="mint-card-new">
             <div className="mint-card-top">
               <span className="minting-label">MINTING</span>
-              <span className="minting-ticker">$rave</span>
+              <span className="minting-ticker">${TICK}</span>
             </div>
 
             <div className="progress-text-row">
               <span className="progress-percentage">{totalMinted > 0 ? ((totalMinted / TOTAL_SUPPLY) * 100).toFixed(4) : 0}%</span>
-              <span className="progress-numbers">{totalMinted.toLocaleString()} / {TOTAL_SUPPLY.toLocaleString()} rave</span>
+              <span className="progress-numbers">{totalMinted.toLocaleString()} / {TOTAL_SUPPLY.toLocaleString()} {TICK}</span>
             </div>
             <div className="card-progress-container">
               <div
@@ -444,7 +689,7 @@ function App() {
                 {`{
   "p": "mon-20",
   "op": "mint",
-  "tick": "rave",
+  "tick": "${TICK}",
   "amt": "${repeatCount * MINT_AMOUNT}"
 }`}
               </pre>
@@ -453,7 +698,7 @@ function App() {
             <div className="fee-summary-box">
               <div className="fee-row">
                 <span>Total Tokens</span>
-                <span>{repeatCount} × {MINT_AMOUNT.toLocaleString()} = {(repeatCount * MINT_AMOUNT).toLocaleString()} rave</span>
+                <span>{repeatCount} × {MINT_AMOUNT.toLocaleString()} = {(repeatCount * MINT_AMOUNT).toLocaleString()} {TICK}</span>
               </div>
               <div className="fee-row">
                 <span>Protocol Fee</span>
@@ -485,57 +730,67 @@ function App() {
               </div>
             )}
           </div>
+
+          <aside className="activity-sidebar">
+            <div className="activity-sidebar-header">
+              <div className="activity-title-wrap">
+                <span className="activity-live-dot" />
+                <span className="activity-title">Live Mint Activity</span>
+              </div>
+              <span className="activity-count">
+                {recentActivity.length > 0 ? `${recentActivity.length} on-chain` : 'Scanning…'}
+              </span>
+            </div>
+            <div className="activity-feed">
+              {recentActivity.length === 0 ? (
+                <div className="activity-empty">
+                  <div className="activity-empty-pulse" />
+                  <p>Waiting for new mints on-chain…</p>
+                  <span>Scanning Monad blocks every 15s</span>
+                </div>
+              ) : (
+                recentActivity.slice(0, 20).map((inc) => (
+                  <a
+                    key={inc.hash}
+                    href={`https://monadvision.com/tx/${inc.hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="activity-row"
+                  >
+                    <div className="activity-row-top">
+                      <span className="activity-amount">+{inc.amount.toLocaleString()} {TICK}</span>
+                      <span className="activity-time" title={inc.time}>{formatRelativeTime(inc.timestamp)}</span>
+                    </div>
+                    <div className="activity-row-bottom">
+                      <span className="activity-from" title={inc.from}>
+                        by {formatAddress(inc.from)}
+                      </span>
+                      <span className="activity-hash">{formatAddress(inc.hash)}</span>
+                    </div>
+                  </a>
+                ))
+              )}
+            </div>
+          </aside>
+          </div>
         )}
 
         {activeTab === 'inscriptions' && (
-          <div className="inscriptions-section">
-            <div className="inscriptions-page-header">
-              <h2 className="inscriptions-header">My Inscriptions</h2>
-              <div className="total-pepo-badge">
-                Total Balance: {myInscriptions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} rave
-              </div>
-            </div>
-
-            {myInscriptions.length === 0 ? (
-              <div className="empty-state">
-                <p>You haven't minted any rave yet.</p>
-                <button className="wallet-btn" onClick={() => handleTabChange('mint')}>Go Mint</button>
-              </div>
-            ) : (
-              <div className="inscriptions-list">
-                {myInscriptions.map((inc, index) => (
-                  <div key={index} className="inscription-item">
-                    <div className="inscription-info">
-                      <span className="inscription-amount">{inc.amount} rave</span>
-                      <span className="inscription-hash">
-                        Tx: <a href={`https://monadvision.com/tx/${inc.hash}`} target="_blank" rel="noopener noreferrer">
-                          {formatAddress(inc.hash)}
-                        </a>
-                      </span>
-                    </div>
-                    <div className="inscription-date">{inc.time}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <MyInscriptions
+            account={account}
+            inscriptions={combinedMyInscriptions}
+            isLoading={isLoadingHistory}
+            tick={TICK}
+            totalSupply={TOTAL_SUPPLY}
+            walletBalance={userBalance}
+            onConnect={connectWallet}
+            onGoMint={() => handleTabChange('mint')}
+            onGoMarket={() => handleTabChange('marketplace')}
+          />
         )}
 
         {activeTab === 'marketplace' && (
-          <div className="about-page">
-            <div className="about-hero">
-              <div className="about-hero-glow"></div>
-              <h1 className="about-title">Marketplace</h1>
-              <p className="about-subtitle">
-                The MON-20 marketplace is under construction. Soon you'll be able to list, buy,
-                and trade rave inscriptions peer-to-peer on Monad.
-              </p>
-              <button className="about-cta" onClick={() => handleTabChange('mint')}>
-                <Rocket size={18} />
-                Mint in the meantime
-              </button>
-            </div>
-          </div>
+          <Marketplace account={account} signer={signer} tick={TICK} onBalanceChange={loadUserBalance} />
         )}
 
         {activeTab === 'about' && (
@@ -716,6 +971,201 @@ function App() {
       <footer>
         <p>Built for the Monad Ecosystem</p>
       </footer>
+
+      <WalletPicker
+        open={pickerOpen}
+        wallets={wallets}
+        onPick={async (w) => { setPickerOpen(false); await connectWith(w); }}
+        onClose={() => setPickerOpen(false)}
+      />
+    </div>
+  );
+}
+
+const fmtAddrShort = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
+const relTime = (ts) => {
+  if (!ts) return '';
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - Number(ts)));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+};
+
+function MyInscriptions({ account, inscriptions, isLoading, tick, totalSupply, walletBalance, onConnect, onGoMint, onGoMarket }) {
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('newest'); // newest | oldest | largest
+  const [copied, setCopied] = useState('');
+
+  // Use the API-sourced wallet balance (blockchain truth) instead of deriving
+  // from the activity feed, which was the root cause of disappearing balances.
+  const totalBalance = walletBalance != null ? walletBalance : inscriptions.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+  const mintsCount = inscriptions.length;
+  const supplyShare = totalSupply > 0 ? (totalBalance / totalSupply) * 100 : 0;
+  const firstMint = useMemo(() => inscriptions.reduce((min, c) => (!min || (c.timestamp ?? Infinity) < (min.timestamp ?? Infinity)) ? c : min, null), [inscriptions]);
+  const lastMint = useMemo(() => inscriptions.reduce((max, c) => (!max || (c.timestamp ?? 0) > (max.timestamp ?? 0)) ? c : max, null), [inscriptions]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let arr = inscriptions;
+    if (q) arr = arr.filter(i => i.hash.toLowerCase().includes(q) || String(i.amount).includes(q));
+    arr = [...arr];
+    if (sort === 'oldest') arr.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    else if (sort === 'largest') arr.sort((a, b) => b.amount - a.amount);
+    else arr.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    return arr;
+  }, [inscriptions, query, sort]);
+
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); setCopied(text); setTimeout(() => setCopied(''), 1200); } catch {}
+  };
+
+  if (!account) {
+    return (
+      <div className="inscriptions-section">
+        <div className="myinsc-empty">
+          <div className="myinsc-empty-glow" />
+          <Wallet size={42} />
+          <h3>Connect your wallet</h3>
+          <p>Sign in to view your on-chain <strong>{tick}</strong> inscriptions and minting history.</p>
+          <button className="wallet-btn" onClick={onConnect}><Wallet size={16} /> Connect Wallet</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inscriptions-section">
+      {/* Hero card */}
+      <div className="myinsc-hero">
+        <div className="myinsc-hero-bg" />
+        <div className="myinsc-hero-left">
+          <div className="myinsc-eyebrow"><Sparkles size={14} /> On-chain holdings</div>
+          <div className="myinsc-balance">
+            <span className="myinsc-balance-value">{totalBalance.toLocaleString()}</span>
+            <span className="myinsc-balance-tick">${tick}</span>
+          </div>
+          <div className="myinsc-address" title={account} onClick={() => copy(account)}>
+            <Hash size={13} /> {fmtAddrShort(account)}
+            {copied === account ? <CheckCircle size={13} /> : <Copy size={13} />}
+          </div>
+        </div>
+        <div className="myinsc-hero-right">
+          <button className="myinsc-cta primary" onClick={onGoMarket}>
+            <TrendingUp size={16} /> List on Marketplace
+          </button>
+          <button className="myinsc-cta ghost" onClick={onGoMint}>
+            <Zap size={16} /> Mint more
+          </button>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="myinsc-stats">
+        <div className="myinsc-stat">
+          <div className="myinsc-stat-icon"><Coins size={16} /></div>
+          <div>
+            <div className="myinsc-stat-label">Total Balance</div>
+            <div className="myinsc-stat-value">{totalBalance.toLocaleString()} {tick}</div>
+          </div>
+        </div>
+        <div className="myinsc-stat">
+          <div className="myinsc-stat-icon"><Layers size={16} /></div>
+          <div>
+            <div className="myinsc-stat-label">Inscriptions</div>
+            <div className="myinsc-stat-value">{mintsCount.toLocaleString()}</div>
+          </div>
+        </div>
+        <div className="myinsc-stat">
+          <div className="myinsc-stat-icon"><TrendingUp size={16} /></div>
+          <div>
+            <div className="myinsc-stat-label">Share of Supply</div>
+            <div className="myinsc-stat-value">{supplyShare < 0.0001 ? '<0.0001' : supplyShare.toFixed(4)}%</div>
+          </div>
+        </div>
+        <div className="myinsc-stat">
+          <div className="myinsc-stat-icon"><Clock size={16} /></div>
+          <div>
+            <div className="myinsc-stat-label">Last mint</div>
+            <div className="myinsc-stat-value">{lastMint ? relTime(lastMint.timestamp) : '—'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="myinsc-toolbar">
+        <div className="myinsc-search">
+          <Search size={15} />
+          <input
+            type="text"
+            placeholder="Search by tx hash or amount…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="myinsc-sort">
+          <button className={`myinsc-sort-btn ${sort === 'newest' ? 'active' : ''}`} onClick={() => setSort('newest')}>Newest</button>
+          <button className={`myinsc-sort-btn ${sort === 'oldest' ? 'active' : ''}`} onClick={() => setSort('oldest')}>Oldest</button>
+          <button className={`myinsc-sort-btn ${sort === 'largest' ? 'active' : ''}`} onClick={() => setSort('largest')}>Largest</button>
+        </div>
+      </div>
+
+      {/* Grid */}
+      {isLoading && inscriptions.length === 0 ? (
+        <div className="myinsc-empty">
+          <div className="activity-empty-pulse" />
+          <p>Loading your mints from the blockchain…</p>
+          <span style={{ color: '#6d5b97', fontSize: '0.8rem' }}>Scanning Monad blocks</span>
+        </div>
+      ) : inscriptions.length === 0 ? (
+        <div className="myinsc-empty">
+          <Coins size={36} />
+          <h3>No {tick} yet</h3>
+          <p>Mint your first inscription to start your collection.</p>
+          <button className="wallet-btn" onClick={onGoMint}><Zap size={16} /> Go to Mint</button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="myinsc-empty">
+          <Search size={28} />
+          <p>No inscriptions match "{query}".</p>
+        </div>
+      ) : (
+        <div className="myinsc-grid">
+          {filtered.map((inc, i) => (
+            <div key={inc.hash} className="myinsc-card">
+              <div className="myinsc-card-glow" />
+              <div className="myinsc-card-head">
+                <span className="myinsc-card-tick">{tick}</span>
+                <span className="myinsc-card-idx">#{mintsCount - (sort === 'newest' ? i : filtered.findIndex(x => x.hash === inc.hash))}</span>
+              </div>
+              <div className="myinsc-card-amount">
+                +{Number(inc.amount).toLocaleString()} <small>{tick}</small>
+              </div>
+              <div className="myinsc-card-meta">
+                <span title={new Date((inc.timestamp || 0) * 1000).toLocaleString()}>
+                  <Clock size={12} /> {relTime(inc.timestamp)}
+                </span>
+                {inc.block ? <span><Layers size={12} /> #{inc.block}</span> : null}
+              </div>
+              <div className="myinsc-card-actions">
+                <button className="myinsc-card-btn" onClick={() => copy(inc.hash)} title="Copy tx hash">
+                  {copied === inc.hash ? <CheckCircle size={13} /> : <Copy size={13} />}
+                  <span className="myinsc-hash">{fmtAddrShort(inc.hash)}</span>
+                </button>
+                <a
+                  className="myinsc-card-btn ext"
+                  href={`https://monadvision.com/tx/${inc.hash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View on explorer"
+                >
+                  <ExternalLink size={13} />
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
