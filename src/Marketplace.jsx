@@ -715,43 +715,91 @@ function relTime(ts) {
 }
 
 function ActivityPanel({ events, loading }) {
+  // Aggregate counters per action type for the header strip
+  const counts = useMemo(() => {
+    const out = { list: 0, sold: 0, cancel: 0 };
+    for (const e of events) {
+      if (e.kind === 'sold') out.sold++;
+      else if (e.kind === 'cancelled') out.cancel++;
+      else out.list++;
+    }
+    return out;
+  }, [events]);
+
+  // Sparkline data from sold events (last 24 unit prices)
+  const sparkPts = useMemo(() => {
+    return [...events]
+      .filter(e => e.kind === 'sold')
+      .reverse()
+      .slice(-24)
+      .map(e => Number(e.price_mon) / Math.max(1, Number(e.amount)))
+      .filter(n => isFinite(n) && n > 0);
+  }, [events]);
+
   return (
-    <div className="market-activity">
-      <div className="market-activity-head">
-        <div className="market-activity-icon"><TrendingUp size={18} /></div>
-        <div>
+    <div className="mp-act">
+      {/* ── Header strip: title + live + counters + sparkline ── */}
+      <div className="mp-act-head">
+        <div className="mp-act-head-title">
+          <span className="mp-act-live"><span className="mp-act-live-dot" /> LIVE</span>
           <h3>Market Activity</h3>
-          <p>Live feed of listings, sales &amp; cancellations</p>
+          <span className="mp-act-sub">{events.length.toLocaleString()} events</span>
+        </div>
+        <div className="mp-act-counters">
+          <div className="mp-act-counter sold"><span>Sales</span><strong>{counts.sold.toLocaleString()}</strong></div>
+          <div className="mp-act-counter list"><span>Listings</span><strong>{counts.list.toLocaleString()}</strong></div>
+          <div className="mp-act-counter cancel"><span>Cancels</span><strong>{counts.cancel.toLocaleString()}</strong></div>
+          {sparkPts.length > 1 && (
+            <div className="mp-act-spark"><Sparkline points={sparkPts} /></div>
+          )}
         </div>
       </div>
+
+      {/* ── Column header (sticky) ── */}
+      <div className="mp-act-cols" role="row">
+        <span className="mp-act-c-act">Action</span>
+        <span className="mp-act-c-tok">Token</span>
+        <span className="mp-act-c-amt">Amount</span>
+        <span className="mp-act-c-price">Price</span>
+        <span className="mp-act-c-unit">Unit</span>
+        <span className="mp-act-c-from">From</span>
+        <span className="mp-act-c-to">To</span>
+        <span className="mp-act-c-tx">Tx</span>
+        <span className="mp-act-c-time">Time</span>
+      </div>
+
+      {/* ── Rows ── */}
       {loading ? (
-        <div className="market-activity-empty"><Loader2 className="spin" size={20} /></div>
+        <div className="mp-act-state"><Loader2 className="spin" size={20} /> <span>Loading market activity…</span></div>
       ) : events.length === 0 ? (
-        <div className="market-activity-empty">
-          <Activity size={22} />
-          <p>No activity yet.</p>
-        </div>
+        <div className="mp-act-state"><Activity size={22} /> <span>No activity yet.</span></div>
       ) : (
-        <div className="market-activity-list">
+        <div className="mp-act-rows" role="rowgroup">
           {events.map((e, i) => {
             const cls = e.kind === 'sold' ? 'sold' : e.kind === 'cancelled' ? 'cancel' : 'list';
             const label = e.kind === 'sold' ? 'SALE' : e.kind === 'cancelled' ? 'CANCEL' : 'LIST';
+            const unit = Number(e.price_mon) / Math.max(1, Number(e.amount));
+            const txShort = e.tx_hash ? `${e.tx_hash.slice(0, 6)}…${e.tx_hash.slice(-4)}` : '—';
             return (
-              <div key={`${e.listing_id}-${e.kind}-${i}`} className="market-activity-item">
-                <div className="market-activity-row1">
-                  <span className={`market-activity-pill ${cls}`}>{label}</span>
-                  <span className="market-activity-time" title={new Date(Number(e.ts) * 1000).toLocaleString()}>
-                    {relTime(e.ts)}
-                  </span>
-                </div>
-                <div className="market-activity-row2">
-                  <strong>{Number(e.amount).toLocaleString()} {e.tick}</strong>
-                  <span>{fmtMon(e.price_mon)} MON</span>
-                </div>
-                <div className="market-activity-row3">
-                  {fmtAddr(e.from)}
-                  {e.to && <> <ArrowRight size={11} /> {fmtAddr(e.to)}</>}
-                </div>
+              <div
+                key={`${e.listing_id}-${e.kind}-${i}`}
+                className={`mp-act-row ${cls}`}
+                style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+                role="row"
+              >
+                <span className="mp-act-c-act">
+                  <span className={`mp-act-pill ${cls}`}>{label}</span>
+                </span>
+                <span className="mp-act-c-tok"><strong>{e.tick}</strong></span>
+                <span className="mp-act-c-amt mono">{Number(e.amount).toLocaleString()}</span>
+                <span className="mp-act-c-price mono"><strong>{fmtMon(e.price_mon)}</strong><small> MON</small></span>
+                <span className="mp-act-c-unit mono mut">{fmtMon(unit)}</span>
+                <span className="mp-act-c-from mono mut" title={e.from}>{fmtAddr(e.from)}</span>
+                <span className="mp-act-c-to mono mut" title={e.to || ''}>
+                  {e.to ? (<><ArrowRight size={11} className="mp-act-arrow" /> {fmtAddr(e.to)}</>) : '—'}
+                </span>
+                <span className="mp-act-c-tx mono mut" title={e.tx_hash || ''}>{txShort}</span>
+                <span className="mp-act-c-time mut" title={new Date(Number(e.ts) * 1000).toLocaleString()}>{relTime(e.ts)}</span>
               </div>
             );
           })}
