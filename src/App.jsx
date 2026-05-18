@@ -80,13 +80,14 @@ function App() {
     if (path === '/My-Inscriptions') return 'inscriptions';
     if (path === '/mint') return 'mint';
     if (path === '/marketplace') return 'marketplace';
+    if (path === '/docs') return 'docs';
     return 'about'; // Default to about for / or unknown paths
   };
   const [activeTab, setActiveTab] = useState(getInitialTab);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint', marketplace: '/marketplace' };
+    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint', marketplace: '/marketplace', docs: '/docs' };
     window.history.pushState(null, '', pathMap[tab] || '/');
   };
 
@@ -966,10 +967,138 @@ function App() {
             </div>
           </div>
         )}
+
+        {activeTab === 'docs' && (
+          <div className="docs-page">
+            <div className="docs-hero">
+              <span className="docs-eyebrow">DOCUMENTATION</span>
+              <h1>How Monad Inscriptions Works</h1>
+              <p>A protocol-focused guide to minting, holding, and trading <code>mon-20</code> inscriptions on the Monad blockchain.</p>
+            </div>
+
+            <section className="docs-section">
+              <h2>1. What is a mon-20 inscription?</h2>
+              <p>
+                <code>mon-20</code> is a lightweight, JSON-based token standard for Monad — inspired by Bitcoin Ordinals BRC-20.
+                Each inscription is a plain JSON payload embedded directly in the transaction <code>calldata</code> sent to a
+                receiver wallet. There is no smart contract for the token itself; the chain is the database, and indexers reconstruct supply, balances, and history by reading transactions.
+              </p>
+              <pre className="docs-code">
+{`{
+  "p":    "mon-20",
+  "op":   "mint",
+  "tick": "BOB",
+  "amt":  "1000"
+}`}
+              </pre>
+            </section>
+
+            <section className="docs-section">
+              <h2>2. Minting</h2>
+              <p>When you click <strong>Mint</strong>:</p>
+              <ol>
+                <li>Your wallet signs a transaction sending <strong>0.002 MON</strong> (protocol fee) to the receiver wallet.</li>
+                <li>The <code>calldata</code> field carries the JSON inscription payload above.</li>
+                <li>Once mined, our backend indexer parses the tx, validates the JSON, and credits your address with the minted amount.</li>
+                <li>The progress bar and live activity feed update in real-time over WebSocket.</li>
+              </ol>
+              <p className="docs-note">
+                <strong>Note:</strong> there is no smart contract minting — ownership is established purely by the chain transcript. Refreshing your browser will not lose data because all state lives on Monad.
+              </p>
+            </section>
+
+            <section className="docs-section">
+              <h2>3. My Inscriptions</h2>
+              <p>
+                The <strong>My Inscriptions</strong> page queries the indexer for every mint <em>and</em> transfer that affected your address, then aggregates them into a single balance.
+                Every row is a verifiable on-chain transaction — click any tx hash to inspect it in a Monad block explorer.
+              </p>
+            </section>
+
+            <section className="docs-section">
+              <h2>4. Marketplace</h2>
+              <p>The marketplace is fully non-custodial:</p>
+              <ul>
+                <li><strong>Listing:</strong> tokens are escrowed in the marketplace contract (<code>MonadInscriptionMarket.sol</code>) via a <code>list()</code> call. They remain yours until sold.</li>
+                <li><strong>Buying:</strong> the buyer sends MON to the contract, which atomically transfers the inscription amount to them and forwards the funds (minus protocol fee) to the seller.</li>
+                <li><strong>Cancelling:</strong> sellers can withdraw their tokens any time with <code>cancel()</code>.</li>
+              </ul>
+              <p>A small protocol fee is taken on each sale. All listings and sales are indexed from on-chain events — no off-chain database trust required.</p>
+            </section>
+
+            <section className="docs-section">
+              <h2>5. Architecture</h2>
+              <ul>
+                <li><strong>Frontend:</strong> React + Vite, deployed on Vercel.</li>
+                <li><strong>Indexer:</strong> Node.js + SQLite, polls Monad RPC every 4 s, parses inscriptions, broadcasts new events over WebSocket.</li>
+                <li><strong>Marketplace contract:</strong> Solidity contract on Monad — events (<code>Listed</code>, <code>Sold</code>, <code>Cancelled</code>) are indexed and surfaced in the UI in real time.</li>
+                <li><strong>Wallet:</strong> EIP-6963 multi-wallet detection. MetaMask, Rabby, OKX, Phantom etc. all work out of the box.</li>
+              </ul>
+            </section>
+
+            <section className="docs-section">
+              <h2>6. Network details</h2>
+              <table className="docs-table">
+                <tbody>
+                  <tr><th>Network</th><td>Monad</td></tr>
+                  <tr><th>Chain ID</th><td>143</td></tr>
+                  <tr><th>RPC URL</th><td><code>https://rpc.monad.xyz</code></td></tr>
+                  <tr><th>Native token</th><td>MON</td></tr>
+                  <tr><th>Protocol</th><td><code>mon-20</code></td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section className="docs-section">
+              <h2>7. FAQ</h2>
+              <details className="docs-faq">
+                <summary>Do I need MON to mint?</summary>
+                <p>Yes — 0.002 MON per mint as the protocol fee, plus a small gas cost (typically &lt; 0.0001 MON).</p>
+              </details>
+              <details className="docs-faq">
+                <summary>Can I lose my inscriptions if the site goes down?</summary>
+                <p>No. Inscriptions live on Monad. The website is just a viewer / trading interface. Anyone can run their own indexer against the same data.</p>
+              </details>
+              <details className="docs-faq">
+                <summary>Why does it sometimes take a few seconds to show my mint?</summary>
+                <p>The indexer polls Monad every 4 seconds. Your transaction is final the moment it's mined; the UI just needs one polling cycle to reflect it.</p>
+              </details>
+              <details className="docs-faq">
+                <summary>Is this open source?</summary>
+                <p>Yes — the full codebase (frontend, indexer, contracts) is on GitHub.</p>
+              </details>
+            </section>
+          </div>
+        )}
       </main>
 
-      <footer>
-        <p>Built for the Monad Ecosystem</p>
+      <footer className="site-footer">
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <img src="/logo.png" alt="Monad Inscriptions" className="footer-logo" />
+            <div>
+              <strong>Monad Inscriptions</strong>
+              <span>Built for the Monad Ecosystem</span>
+            </div>
+          </div>
+          <nav className="footer-nav">
+            <a href="/mint" onClick={(e) => { e.preventDefault(); handleTabChange('mint'); }}>Mint</a>
+            <a href="/marketplace" onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}>Marketplace</a>
+            <a href="/My-Inscriptions" onClick={(e) => { e.preventDefault(); handleTabChange('inscriptions'); }}>My Inscriptions</a>
+            <a href="/docs" onClick={(e) => { e.preventDefault(); handleTabChange('docs'); }}>Docs</a>
+          </nav>
+          <div className="footer-social">
+            <a href="https://x.com/MonadInscribe" target="_blank" rel="noopener noreferrer" aria-label="X / Twitter" className="footer-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>© {new Date().getFullYear()} Monad Inscriptions · mon-20 protocol</span>
+          <span>Settled on Monad · Non-custodial</span>
+        </div>
       </footer>
 
       <WalletPicker
@@ -1131,39 +1260,76 @@ function MyInscriptions({ account, inscriptions, isLoading, tick, totalSupply, w
         </div>
       ) : (
         <div className="myinsc-grid">
-          {filtered.map((inc, i) => (
-            <div key={inc.hash} className="myinsc-card">
-              <div className="myinsc-card-glow" />
-              <div className="myinsc-card-head">
-                <span className="myinsc-card-tick">{tick}</span>
-                <span className="myinsc-card-idx">#{mintsCount - (sort === 'newest' ? i : filtered.findIndex(x => x.hash === inc.hash))}</span>
-              </div>
-              <div className="myinsc-card-amount">
-                +{Number(inc.amount).toLocaleString()} <small>{tick}</small>
-              </div>
-              <div className="myinsc-card-meta">
-                <span title={new Date((inc.timestamp || 0) * 1000).toLocaleString()}>
-                  <Clock size={12} /> {relTime(inc.timestamp)}
-                </span>
-                {inc.block ? <span><Layers size={12} /> #{inc.block}</span> : null}
-              </div>
-              <div className="myinsc-card-actions">
-                <button className="myinsc-card-btn" onClick={() => copy(inc.hash)} title="Copy tx hash">
-                  {copied === inc.hash ? <CheckCircle size={13} /> : <Copy size={13} />}
-                  <span className="myinsc-hash">{fmtAddrShort(inc.hash)}</span>
-                </button>
+          {filtered.map((inc, i) => {
+            const idx = mintsCount - (sort === 'newest' ? i : filtered.findIndex(x => x.hash === inc.hash));
+            const amtStr = String(Number(inc.amount) || 0);
+            return (
+              <div key={inc.hash} className="myinsc-card insc-card-v2">
+                {/* VSCode-style inscription JSON preview */}
+                <div className="insc-card-preview">
+                  <div className="insc-card-preview-glow" />
+                  <div className="insc-card-preview-noise" aria-hidden="true" />
+                  <div className="insc-card-preview-chrome">
+                    <span className="dot r" /><span className="dot y" /><span className="dot g" />
+                    <span className="insc-card-preview-fname">inscription.json</span>
+                    <span className="insc-card-preview-idx">#{idx}</span>
+                  </div>
+                  <pre className="insc-card-preview-code" aria-hidden="true">
+                    <span className="ln-row"><span className="ln">1</span><span className="tok pn">{'{'}</span></span>
+                    <span className="ln-row"><span className="ln">2</span>{'  '}<span className="tok k">"p"</span><span className="tok pn">: </span><span className="tok s">"mon-20"</span><span className="tok pn">,</span></span>
+                    <span className="ln-row"><span className="ln">3</span>{'  '}<span className="tok k">"op"</span><span className="tok pn">: </span><span className="tok s">"mint"</span><span className="tok pn">,</span></span>
+                    <span className="ln-row"><span className="ln">4</span>{'  '}<span className="tok k">"tick"</span><span className="tok pn">: </span><span className="tok s">"{tick}"</span><span className="tok pn">,</span></span>
+                    <span className="ln-row"><span className="ln">5</span>{'  '}<span className="tok k">"amt"</span><span className="tok pn">: </span><span className="tok n">"{amtStr}"</span></span>
+                    <span className="ln-row"><span className="ln">6</span><span className="tok pn">{'}'}</span></span>
+                  </pre>
+                </div>
+
+                {/* On-chain metadata strip */}
+                <div className="insc-card-meta">
+                  <div className="insc-card-meta-row">
+                    <span className="insc-card-meta-label">AMOUNT</span>
+                    <span className="insc-card-meta-value strong">+{Number(inc.amount).toLocaleString()} {tick}</span>
+                  </div>
+                  <div className="insc-card-meta-row">
+                    <span className="insc-card-meta-label">TX</span>
+                    <button className="insc-card-meta-value mono link" onClick={() => copy(inc.hash)} title={inc.hash}>
+                      {copied === inc.hash ? <CheckCircle size={11} /> : <Copy size={11} />}
+                      <span>{fmtAddrShort(inc.hash)}</span>
+                    </button>
+                  </div>
+                  {inc.block ? (
+                    <div className="insc-card-meta-row">
+                      <span className="insc-card-meta-label">BLOCK</span>
+                      <span className="insc-card-meta-value mono">#{inc.block}</span>
+                    </div>
+                  ) : null}
+                  <div className="insc-card-meta-row">
+                    <span className="insc-card-meta-label">MINTED</span>
+                    <span className="insc-card-meta-value" title={new Date((inc.timestamp || 0) * 1000).toLocaleString()}>
+                      {relTime(inc.timestamp)}
+                    </span>
+                  </div>
+                  <div className="insc-card-meta-row">
+                    <span className="insc-card-meta-label">OWNER</span>
+                    <span className="insc-card-meta-value mono mut" title={account}>
+                      {fmtAddrShort(account)}
+                    </span>
+                  </div>
+                </div>
+
                 <a
-                  className="myinsc-card-btn ext"
+                  className="insc-card-explorer"
                   href={`https://monadvision.com/tx/${inc.hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="View on explorer"
+                  title="View on Monad explorer"
                 >
-                  <ExternalLink size={13} />
+                  <ExternalLink size={12} />
+                  <span>View on explorer</span>
                 </a>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

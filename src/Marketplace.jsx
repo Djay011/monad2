@@ -201,10 +201,9 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
       {/* ── COMPACT HEADER ─────────────────────────────────── */}
       <section className="mp-header">
         <div className="mp-header-id">
-          <div className="mp-coll-mark" aria-hidden="true">{tick.charAt(0)}</div>
           <div className="mp-header-text">
             <div className="mp-header-title-row">
-              <h1 className="mp-title">{tick} Marketplace</h1>
+              <h1 className="mp-title">Marketplace</h1>
               <span className="mp-chip mp-chip-verified" title="Verified collection">
                 <CheckCircle size={11} /> Verified
               </span>
