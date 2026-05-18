@@ -211,7 +211,7 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
               <span className="mp-chip mp-chip-hot"><Flame size={11} /> Trending</span>
             </div>
             <div className="mp-header-sub">
-              Peer-to-peer {tick} inscriptions · non-custodial · settled on Monad
+              Native MON-20 inscription marketplace on Monad
             </div>
           </div>
         </div>

@@ -970,102 +970,385 @@ function App() {
 
         {activeTab === 'docs' && (
           <div className="docs-page">
+            {/* ── Animated grid hero ─────────────────────────────── */}
             <div className="docs-hero">
-              <span className="docs-eyebrow">DOCUMENTATION</span>
-              <h1>How Monad Inscriptions Works</h1>
-              <p>A protocol-focused guide to minting, holding, and trading <code>mon-20</code> inscriptions on the Monad blockchain.</p>
+              <div className="docs-hero-grid" aria-hidden="true" />
+              <div className="docs-hero-glow" aria-hidden="true" />
+              <div className="docs-hero-particles" aria-hidden="true">
+                <span /><span /><span /><span /><span /><span />
+              </div>
+              <div className="docs-hero-content">
+                <div className="docs-eyebrow-row">
+                  <span className="docs-eyebrow">DOCUMENTATION</span>
+                  <span className="docs-eyebrow-version">v1.0 · mon-20</span>
+                </div>
+                <h1>How Monad Inscriptions Works</h1>
+                <p>Technical reference for minting, holding, indexing, and trading <code>mon-20</code> inscriptions on the Monad blockchain. Built for developers, traders, and protocol researchers.</p>
+
+                {/* Live protocol stats strip */}
+                {(() => {
+                  const holders = new Set(
+                    recentActivity.map(a => (a.from || '').toLowerCase()).filter(Boolean)
+                  ).size;
+                  const fmt = (n) => Number(n).toLocaleString();
+                  return (
+                    <div className="docs-hero-stats">
+                      <div className="docs-stat">
+                        <span className="docs-stat-label">Supply</span>
+                        <strong>{fmt(TOTAL_SUPPLY)}</strong>
+                        <span className="docs-stat-unit">{TICK}</span>
+                      </div>
+                      <div className="docs-stat">
+                        <span className="docs-stat-label">Minted</span>
+                        <strong>{fmt(totalMinted)}</strong>
+                        <span className="docs-stat-unit">{((totalMinted / TOTAL_SUPPLY) * 100).toFixed(2)}%</span>
+                      </div>
+                      <div className="docs-stat">
+                        <span className="docs-stat-label">Inscriptions</span>
+                        <strong>{fmt(recentActivity.length)}</strong>
+                        <span className="docs-stat-unit">on-chain</span>
+                      </div>
+                      <div className="docs-stat">
+                        <span className="docs-stat-label">Holders</span>
+                        <strong>{fmt(holders)}</strong>
+                        <span className="docs-stat-unit">unique</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
+            {/* ── 1. Protocol overview ───────────────────────────── */}
             <section className="docs-section">
-              <h2>1. What is a mon-20 inscription?</h2>
+              <div className="docs-section-head">
+                <span className="docs-section-num">01</span>
+                <h2>The mon-20 standard</h2>
+              </div>
               <p>
-                <code>mon-20</code> is a lightweight, JSON-based token standard for Monad — inspired by Bitcoin Ordinals BRC-20.
-                Each inscription is a plain JSON payload embedded directly in the transaction <code>calldata</code> sent to a
-                receiver wallet. There is no smart contract for the token itself; the chain is the database, and indexers reconstruct supply, balances, and history by reading transactions.
+                <code>mon-20</code> is a JSON-based token standard for the Monad blockchain, inspired by
+                Bitcoin Ordinals (BRC-20). Each inscription is a plain JSON payload embedded directly into a
+                transaction's <code>calldata</code> field. There is no ERC-20 contract for the token itself —
+                the chain transcript <strong>is</strong> the database, and indexers reconstruct supply, balances,
+                and history by replaying transactions.
               </p>
-              <pre className="docs-code">
-{`{
+
+              <div className="docs-feature-grid">
+                <div className="docs-feature">
+                  <strong>Contract-less</strong>
+                  <span>No deployment, no upgrades, no admin keys.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>Self-custodial</strong>
+                  <span>Tokens never leave wallets except via signed transactions.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>Permissionless</strong>
+                  <span>Anyone can run an indexer and verify the full state.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>Cheap</strong>
+                  <span>Single transaction, no contract storage writes.</span>
+                </div>
+              </div>
+
+              <DocsCodeBlock
+                filename="inscription.json"
+                code={`{
   "p":    "mon-20",
   "op":   "mint",
-  "tick": "BOB",
-  "amt":  "1000"
+  "tick": "${TICK}",
+  "amt":  "${MINT_AMOUNT}"
 }`}
-              </pre>
+              />
+
+              <DocsCallout kind="note" title="Why JSON in calldata?">
+                Calldata is the cheapest persistent commitment available on EVM chains. The payload is
+                immutable, publicly verifiable, and recoverable from any archive node — no centralized
+                metadata server required.
+              </DocsCallout>
             </section>
 
+            {/* ── 2. Minting flow ───────────────────────────────── */}
             <section className="docs-section">
-              <h2>2. Minting</h2>
-              <p>When you click <strong>Mint</strong>:</p>
-              <ol>
-                <li>Your wallet signs a transaction sending <strong>0.002 MON</strong> (protocol fee) to the receiver wallet.</li>
-                <li>The <code>calldata</code> field carries the JSON inscription payload above.</li>
-                <li>Once mined, our backend indexer parses the tx, validates the JSON, and credits your address with the minted amount.</li>
-                <li>The progress bar and live activity feed update in real-time over WebSocket.</li>
-              </ol>
-              <p className="docs-note">
-                <strong>Note:</strong> there is no smart contract minting — ownership is established purely by the chain transcript. Refreshing your browser will not lose data because all state lives on Monad.
-              </p>
+              <div className="docs-section-head">
+                <span className="docs-section-num">02</span>
+                <h2>Minting flow</h2>
+              </div>
+              <p>The <strong>Mint</strong> page composes a single transaction that does two things at once: it pays the protocol fee and inscribes the JSON payload.</p>
+
+              <div className="docs-steps">
+                <div className="docs-step">
+                  <span className="docs-step-i">1</span>
+                  <div>
+                    <strong>Sign</strong>
+                    <span>Wallet signs a tx sending <code>{MINT_PRICE} MON</code> to <code>{RECEIVER_WALLET.slice(0, 8)}…{RECEIVER_WALLET.slice(-6)}</code>.</span>
+                  </div>
+                </div>
+                <div className="docs-step">
+                  <span className="docs-step-i">2</span>
+                  <div>
+                    <strong>Inscribe</strong>
+                    <span>The <code>calldata</code> field carries the <code>mon-20</code> JSON payload (UTF-8 hex-encoded).</span>
+                  </div>
+                </div>
+                <div className="docs-step">
+                  <span className="docs-step-i">3</span>
+                  <div>
+                    <strong>Index</strong>
+                    <span>The indexer detects the tx, parses the JSON, validates protocol/op/tick/amt, and credits the sender's balance.</span>
+                  </div>
+                </div>
+                <div className="docs-step">
+                  <span className="docs-step-i">4</span>
+                  <div>
+                    <strong>Broadcast</strong>
+                    <span>A WebSocket message updates every connected client (progress bar, activity feed, balances) in real time.</span>
+                  </div>
+                </div>
+              </div>
+
+              <DocsCodeBlock
+                filename="hex calldata (utf-8 encoded)"
+                code={`0x646174613a6170706c69636174696f6e2f6a736f6e2c7b2270223a226d6f6e2d3230222c226f70223a226d696e74222c227469636b223a22${TICK}222c22616d74223a22${MINT_AMOUNT}227d`}
+              />
+
+              <DocsCallout kind="tip" title="Idempotent indexing">
+                Each transaction hash is unique and primary-keyed in the indexer DB. Re-syncing or restarting
+                the indexer never double-counts mints.
+              </DocsCallout>
             </section>
 
+            {/* ── 3. Ownership & balances ────────────────────────── */}
             <section className="docs-section">
-              <h2>3. My Inscriptions</h2>
+              <div className="docs-section-head">
+                <span className="docs-section-num">03</span>
+                <h2>Ownership & balance derivation</h2>
+              </div>
               <p>
-                The <strong>My Inscriptions</strong> page queries the indexer for every mint <em>and</em> transfer that affected your address, then aggregates them into a single balance.
-                Every row is a verifiable on-chain transaction — click any tx hash to inspect it in a Monad block explorer.
+                A wallet's balance for a given tick is computed as:
+              </p>
+              <DocsCodeBlock
+                filename="balance.formula"
+                code={`balance(addr, tick) =
+    Σ mint.amt    where mint.from   == addr
+  + Σ transfer.amt where transfer.to   == addr
+  − Σ transfer.amt where transfer.from == addr
+  − Σ listing.amt  where listing escrow == addr (active)`}
+              />
+              <p>
+                This is recomputed deterministically from on-chain events — anyone with an archive node
+                and the indexer source can reproduce the exact same balance set.
               </p>
             </section>
 
+            {/* ── 4. Marketplace ─────────────────────────────────── */}
             <section className="docs-section">
-              <h2>4. Marketplace</h2>
-              <p>The marketplace is fully non-custodial:</p>
-              <ul>
-                <li><strong>Listing:</strong> tokens are escrowed in the marketplace contract (<code>MonadInscriptionMarket.sol</code>) via a <code>list()</code> call. They remain yours until sold.</li>
-                <li><strong>Buying:</strong> the buyer sends MON to the contract, which atomically transfers the inscription amount to them and forwards the funds (minus protocol fee) to the seller.</li>
-                <li><strong>Cancelling:</strong> sellers can withdraw their tokens any time with <code>cancel()</code>.</li>
-              </ul>
-              <p>A small protocol fee is taken on each sale. All listings and sales are indexed from on-chain events — no off-chain database trust required.</p>
+              <div className="docs-section-head">
+                <span className="docs-section-num">04</span>
+                <h2>Marketplace contract</h2>
+              </div>
+              <p>The marketplace is a single Solidity contract on Monad with no admin functions. It exposes three actions:</p>
+              <div className="docs-feature-grid two">
+                <div className="docs-feature">
+                  <strong>list(tick, amt, price)</strong>
+                  <span>Seller transfers tokens into escrow. Emits <code>Listed</code>.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>buy(listingId)</strong>
+                  <span>Buyer sends MON. Atomic transfer + payout. Emits <code>Sold</code>.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>cancel(listingId)</strong>
+                  <span>Seller withdraws escrowed tokens. Emits <code>Cancelled</code>.</span>
+                </div>
+                <div className="docs-feature">
+                  <strong>Fee model</strong>
+                  <span>Flat protocol fee taken atomically on <code>buy()</code>. No off-chain calculation.</span>
+                </div>
+              </div>
+              <DocsCallout kind="warn" title="No off-chain trust">
+                The frontend never holds your tokens or signs on your behalf. Listings, sales, and cancellations
+                are all initiated by your wallet and settled by the contract.
+              </DocsCallout>
             </section>
 
+            {/* ── 5. Architecture diagram ────────────────────────── */}
             <section className="docs-section">
-              <h2>5. Architecture</h2>
-              <ul>
-                <li><strong>Frontend:</strong> React + Vite, deployed on Vercel.</li>
-                <li><strong>Indexer:</strong> Node.js + SQLite, polls Monad RPC every 4 s, parses inscriptions, broadcasts new events over WebSocket.</li>
-                <li><strong>Marketplace contract:</strong> Solidity contract on Monad — events (<code>Listed</code>, <code>Sold</code>, <code>Cancelled</code>) are indexed and surfaced in the UI in real time.</li>
-                <li><strong>Wallet:</strong> EIP-6963 multi-wallet detection. MetaMask, Rabby, OKX, Phantom etc. all work out of the box.</li>
-              </ul>
+              <div className="docs-section-head">
+                <span className="docs-section-num">05</span>
+                <h2>System architecture</h2>
+              </div>
+              <p>End-to-end data flow from your wallet to the UI:</p>
+
+              <div className="docs-arch">
+                <div className="docs-arch-node user">
+                  <span className="docs-arch-tag">CLIENT</span>
+                  <strong>Wallet</strong>
+                  <span>EIP-6963 · MetaMask · Rabby · OKX</span>
+                </div>
+                <div className="docs-arch-arrow"><span>signs tx</span></div>
+
+                <div className="docs-arch-node chain">
+                  <span className="docs-arch-tag">L1</span>
+                  <strong>Monad RPC</strong>
+                  <span>chainId 143 · ~0.5s blocks</span>
+                </div>
+                <div className="docs-arch-arrow"><span>polls every 4s</span></div>
+
+                <div className="docs-arch-node indexer">
+                  <span className="docs-arch-tag">SERVICE</span>
+                  <strong>Indexer</strong>
+                  <span>Node.js · parses mon-20 calldata</span>
+                </div>
+                <div className="docs-arch-arrow"><span>writes</span></div>
+
+                <div className="docs-arch-node db">
+                  <span className="docs-arch-tag">STORAGE</span>
+                  <strong>SQLite</strong>
+                  <span>inscriptions · holders · listings</span>
+                </div>
+                <div className="docs-arch-arrow"><span>broadcasts</span></div>
+
+                <div className="docs-arch-node ws">
+                  <span className="docs-arch-tag">REALTIME</span>
+                  <strong>WebSocket</strong>
+                  <span>new_inscription · listed · sold</span>
+                </div>
+                <div className="docs-arch-arrow"><span>renders</span></div>
+
+                <div className="docs-arch-node frontend">
+                  <span className="docs-arch-tag">UI</span>
+                  <strong>React Frontend</strong>
+                  <span>Vite · deployed on Vercel</span>
+                </div>
+              </div>
+
+              <DocsCallout kind="note" title="Trustless verification">
+                Every layer above the chain is reproducible. If our indexer disappears tomorrow, anyone can
+                spin up a fresh node, replay the chain, and rebuild the exact same state in minutes.
+              </DocsCallout>
             </section>
 
+            {/* ── 6. Network details ─────────────────────────────── */}
             <section className="docs-section">
-              <h2>6. Network details</h2>
-              <table className="docs-table">
-                <tbody>
-                  <tr><th>Network</th><td>Monad</td></tr>
-                  <tr><th>Chain ID</th><td>143</td></tr>
-                  <tr><th>RPC URL</th><td><code>https://rpc.monad.xyz</code></td></tr>
-                  <tr><th>Native token</th><td>MON</td></tr>
-                  <tr><th>Protocol</th><td><code>mon-20</code></td></tr>
-                </tbody>
-              </table>
+              <div className="docs-section-head">
+                <span className="docs-section-num">06</span>
+                <h2>Network details</h2>
+              </div>
+
+              <div className="docs-network">
+                <div className="docs-network-row">
+                  <span className="docs-network-label">Network</span>
+                  <span className="docs-network-value">
+                    <span className="docs-status online"><span /> Monad Mainnet</span>
+                  </span>
+                </div>
+                <div className="docs-network-row">
+                  <span className="docs-network-label">Chain ID</span>
+                  <span className="docs-network-value mono">143 <DocsCopyBtn text="143" /></span>
+                </div>
+                <div className="docs-network-row">
+                  <span className="docs-network-label">RPC URL</span>
+                  <span className="docs-network-value mono">
+                    <code>https://rpc.monad.xyz</code> <DocsCopyBtn text="https://rpc.monad.xyz" />
+                  </span>
+                </div>
+                <div className="docs-network-row">
+                  <span className="docs-network-label">Native token</span>
+                  <span className="docs-network-value">MON</span>
+                </div>
+                <div className="docs-network-row">
+                  <span className="docs-network-label">Protocol</span>
+                  <span className="docs-network-value mono"><code>mon-20</code></span>
+                </div>
+                <div className="docs-network-row">
+                  <span className="docs-network-label">Mint price</span>
+                  <span className="docs-network-value mono">{MINT_PRICE} MON / mint</span>
+                </div>
+              </div>
             </section>
 
+            {/* ── 7. FAQ ─────────────────────────────────────────── */}
             <section className="docs-section">
-              <h2>7. FAQ</h2>
-              <details className="docs-faq">
-                <summary>Do I need MON to mint?</summary>
-                <p>Yes — 0.002 MON per mint as the protocol fee, plus a small gas cost (typically &lt; 0.0001 MON).</p>
+              <div className="docs-section-head">
+                <span className="docs-section-num">07</span>
+                <h2>Frequently asked questions</h2>
+              </div>
+
+              <details className="docs-faq" open>
+                <summary>How are mon-20 balances indexed?</summary>
+                <p>
+                  The indexer polls Monad's RPC every 4 seconds, fetches every transaction sent to the
+                  receiver wallet (and the marketplace contract), parses any <code>data:application/json</code>
+                  payload as <code>mon-20</code>, validates protocol/op/tick/amt, and inserts the event into
+                  SQLite. Holder balances are maintained as a derived materialized view, updated atomically
+                  inside each transaction.
+                </p>
               </details>
+
               <details className="docs-faq">
-                <summary>Can I lose my inscriptions if the site goes down?</summary>
-                <p>No. Inscriptions live on Monad. The website is just a viewer / trading interface. Anyone can run their own indexer against the same data.</p>
+                <summary>Are inscriptions fully on-chain?</summary>
+                <p>
+                  Yes. The JSON payload lives in the transaction's <code>calldata</code>, which is part of the
+                  permanent block transcript. No IPFS, no Arweave, no off-chain blob storage. As long as one
+                  Monad archive node exists, the inscription survives.
+                </p>
               </details>
+
               <details className="docs-faq">
-                <summary>Why does it sometimes take a few seconds to show my mint?</summary>
-                <p>The indexer polls Monad every 4 seconds. Your transaction is final the moment it's mined; the UI just needs one polling cycle to reflect it.</p>
+                <summary>How does ownership verification work?</summary>
+                <p>
+                  Ownership = the address that sent the most recent transfer for a given <code>(tick, unit)</code>
+                  pair, after accounting for active marketplace escrow. Because every state-changing event is
+                  signed by the owning wallet, the chain itself is the authority — the indexer only mirrors what's
+                  already provable.
+                </p>
               </details>
+
+              <details className="docs-faq">
+                <summary>What happens if the indexer goes offline?</summary>
+                <p>
+                  Nothing — your tokens still exist on Monad. When the indexer comes back, it resumes from the
+                  last persisted block height and replays everything it missed. Anyone can run their own
+                  indexer in parallel; the protocol does not depend on this site.
+                </p>
+              </details>
+
+              <details className="docs-faq">
+                <summary>How are transfers tracked?</summary>
+                <p>
+                  Transfers are <code>op: "transfer"</code> inscriptions. The sender signs a transaction whose
+                  payload references the recipient and amount. The indexer subtracts from the sender's balance
+                  and credits the recipient atomically.
+                </p>
+              </details>
+
+              <details className="docs-faq">
+                <summary>How does the marketplace escrow work?</summary>
+                <p>
+                  When you list, your tokens are transferred into the marketplace contract by an
+                  inscription whose <code>to</code> is the contract address. They remain locked until either
+                  a buyer triggers <code>buy()</code> (atomic swap of MON ↔ inscription) or you call
+                  <code>cancel()</code> to retrieve them.
+                </p>
+              </details>
+
+              <details className="docs-faq">
+                <summary>Why can balances take a few seconds to update?</summary>
+                <p>
+                  The indexer polls every 4 s. Once your transaction is mined (typically &lt; 1 s on Monad), it
+                  takes at most one polling cycle to be reflected in the UI. The frontend optimistically updates
+                  certain values (progress bar, your own balance) the moment the tx receipt is confirmed.
+                </p>
+              </details>
+
               <details className="docs-faq">
                 <summary>Is this open source?</summary>
-                <p>Yes — the full codebase (frontend, indexer, contracts) is on GitHub.</p>
+                <p>
+                  Yes — frontend, indexer, and marketplace contract are all on GitHub. Contributions and
+                  third-party indexers are welcome.
+                </p>
               </details>
             </section>
           </div>
@@ -1332,6 +1615,67 @@ function MyInscriptions({ account, inscriptions, isLoading, tick, totalSupply, w
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Docs helpers (CopyBtn + Syntax-highlighted CodeBlock) ─────────── */
+function DocsCopyBtn({ text, label = 'Copy' }) {
+  const [done, setDone] = useState(false);
+  const onClick = async () => {
+    try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1400); } catch {}
+  };
+  return (
+    <button type="button" className="docs-copy" onClick={onClick} title={done ? 'Copied' : label}>
+      {done ? <CheckCircle size={12} /> : <Copy size={12} />}
+      <span>{done ? 'Copied' : label}</span>
+    </button>
+  );
+}
+
+// Tiny JSON syntax highlighter (no external dep)
+function highlightJson(src) {
+  return src
+    .replace(/(&|<|>)/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+    .replace(/("(?:[^"\\]|\\.)*")(\s*:)?/g, (m, str, colon) =>
+      colon ? `<span class="t-k">${str}</span>${colon}` : `<span class="t-s">${str}</span>`)
+    .replace(/\b(true|false|null)\b/g, '<span class="t-c">$1</span>')
+    .replace(/\b(-?\d+(?:\.\d+)?)\b/g, '<span class="t-n">$1</span>')
+    .replace(/([{}\[\],:])/g, '<span class="t-p">$1</span>');
+}
+
+function DocsCodeBlock({ filename = 'inscription.json', code, copy = true }) {
+  const lines = code.replace(/\n$/, '').split('\n');
+  const html = highlightJson(code.replace(/\n$/, ''));
+  const htmlLines = html.split('\n');
+  return (
+    <div className="docs-codeblock">
+      <div className="docs-codeblock-chrome">
+        <span className="dot r" /><span className="dot y" /><span className="dot g" />
+        <span className="docs-codeblock-fname">{filename}</span>
+        {copy && <DocsCopyBtn text={code} />}
+      </div>
+      <pre className="docs-codeblock-body">
+        <div className="docs-codeblock-gutter" aria-hidden="true">
+          {lines.map((_, i) => <span key={i}>{i + 1}</span>)}
+        </div>
+        <code className="docs-codeblock-code"
+          dangerouslySetInnerHTML={{ __html: htmlLines.join('\n') }} />
+      </pre>
+    </div>
+  );
+}
+
+function DocsCallout({ kind = 'note', title, children }) {
+  return (
+    <div className={`docs-callout ${kind}`}>
+      <span className="docs-callout-icon" aria-hidden="true">
+        {kind === 'warn' ? '!' : kind === 'tip' ? '★' : 'i'}
+      </span>
+      <div>
+        {title && <strong>{title}</strong>}
+        <div>{children}</div>
+      </div>
     </div>
   );
 }
