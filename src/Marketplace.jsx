@@ -356,7 +356,7 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
                   <span className="mp-th col-amt">Amount</span>
                   <span className="mp-th col-price">Price</span>
                   <span className="mp-th col-unit">Unit</span>
-                  <span className="mp-th col-rar">Rarity</span>
+                  <span className="mp-th col-rar">Tx</span>
                   <span className="mp-th col-sel">Seller</span>
                   <span className="mp-th col-time">Listed</span>
                   <span className="mp-th col-act"></span>
@@ -527,15 +527,6 @@ function FilterPanel({ priceMin, priceMax, onPriceChange, onClear, stats, soldEv
         </div>
       </FilterSection>
 
-      <FilterSection title="Rarity">
-        <div className="mp-chips">
-          <button><span className="dot rarity-common" /> Common</button>
-          <button><span className="dot rarity-uncommon" /> Uncommon</button>
-          <button><span className="dot rarity-rare" /> Rare</button>
-          <button><span className="dot rarity-epic" /> Epic</button>
-        </div>
-      </FilterSection>
-
       <FilterSection title="Collection stats" defaultOpen={false}>
         <div className="mp-filter-stats">
           <div><span>Avg sale unit</span><strong>{avgUnit ? fmtMon(avgUnit) : '—'} MON</strong></div>
@@ -555,13 +546,8 @@ function FilterPanel({ priceMin, priceMax, onPriceChange, onClear, stats, soldEv
   );
 }
 
-function rarityTier(amount) {
-  const a = Number(amount);
-  if (a >= 10000) return { name: 'EPIC', cls: 'epic' };
-  if (a >= 5000) return { name: 'RARE', cls: 'rare' };
-  if (a >= 2000) return { name: 'UNCOMMON', cls: 'uncommon' };
-  return { name: 'COMMON', cls: 'common' };
-}
+// Short tx-hash representation for blockchain-explorer style metadata.
+const fmtTx = (h) => (h ? `${h.slice(0, 6)}…${h.slice(-4)}` : '');
 
 function listingHues(listing) {
   const seed = String(listing.list_tx_hash || `${listing.id}${listing.seller || ''}`).toLowerCase();
@@ -571,10 +557,39 @@ function listingHues(listing) {
   return { a, b };
 }
 
+// VSCode-style inscription JSON preview rendered inside listing cards.
+// Replaces the legacy gradient artwork with the actual on-chain payload
+// so each card feels native to the mon-20 protocol.
+function InscriptionCodePreview({ tick, amount, hue = 270 }) {
+  const amtStr = String(Number(amount) || 0);
+  const glowStyle = {
+    background: `radial-gradient(60% 70% at 70% 20%, hsla(${hue}, 90%, 65%, 0.22), transparent 70%)`,
+  };
+  return (
+    <div className="insc-preview">
+      <div className="insc-preview-glow" style={glowStyle} />
+      <div className="insc-preview-noise" aria-hidden="true" />
+      <div className="insc-preview-chrome">
+        <span className="dot r" /><span className="dot y" /><span className="dot g" />
+        <span className="insc-preview-fname">inscription.json</span>
+      </div>
+      <pre className="insc-preview-code" aria-hidden="true">
+        <span className="ln-row"><span className="ln">1</span><span className="tok pn">{'{'}</span></span>
+        <span className="ln-row"><span className="ln">2</span>{'  '}<span className="tok k">"p"</span><span className="tok pn">: </span><span className="tok s">"mon-20"</span><span className="tok pn">,</span></span>
+        <span className="ln-row"><span className="ln">3</span>{'  '}<span className="tok k">"op"</span><span className="tok pn">: </span><span className="tok s">"mint"</span><span className="tok pn">,</span></span>
+        <span className="ln-row"><span className="ln">4</span>{'  '}<span className="tok k">"tick"</span><span className="tok pn">: </span><span className="tok s">"{tick}"</span><span className="tok pn">,</span></span>
+        <span className="ln-row"><span className="ln">5</span>{'  '}<span className="tok k">"amt"</span><span className="tok pn">: </span><span className="tok n">"{amtStr}"</span></span>
+        <span className="ln-row"><span className="ln">6</span><span className="tok pn">{'}'}</span></span>
+      </pre>
+      <div className="insc-preview-glass" aria-hidden="true" />
+      <span className="insc-preview-tick">{tick}</span>
+    </div>
+  );
+}
+
 function ListingCard({ listing, account, busy, view, onBuy, onCancel }) {
   const isMine = account && listing.seller.toLowerCase() === account.toLowerCase();
   const unit = Number(listing.price_mon) / Math.max(1, Number(listing.amount));
-  const tier = rarityTier(listing.amount);
   const hues = listingHues(listing);
   const artStyle = {
     background: `radial-gradient(120% 120% at 30% 20%, hsl(${hues.a}, 75%, 55%), hsl(${hues.b}, 65%, 28%) 70%, #0c0414)`,
@@ -582,7 +597,7 @@ function ListingCard({ listing, account, busy, view, onBuy, onCancel }) {
 
   if (view === 'list') {
     return (
-      <div className={`mp-row tier-${tier.cls}`} role="row">
+      <div className="mp-row" role="row">
         <div className="mp-row-cell col-tok">
           <div className="mp-row-thumb" style={artStyle}>
             <span>{listing.tick}</span>
@@ -597,8 +612,8 @@ function ListingCard({ listing, account, busy, view, onBuy, onCancel }) {
           <strong>{fmtMon(listing.price_mon)}</strong><small> MON</small>
         </div>
         <div className="mp-row-cell col-unit mono mut">{fmtMon(unit)}</div>
-        <div className="mp-row-cell col-rar">
-          <span className={`mp-card-rarity rarity-${tier.cls}`}>{tier.name}</span>
+        <div className="mp-row-cell col-rar mono mut" title={listing.list_tx_hash || ''}>
+          {fmtTx(listing.list_tx_hash)}
         </div>
         <div className="mp-row-cell col-sel mono mut" title={listing.seller}>
           {fmtAddr(listing.seller)}{isMine && <span className="mp-row-mine">YOU</span>}
@@ -622,11 +637,10 @@ function ListingCard({ listing, account, busy, view, onBuy, onCancel }) {
   }
 
   return (
-    <div className={`mp-card tier-${tier.cls}`}>
-      <div className="mp-card-art" style={artStyle}>
-        <div className="mp-card-art-grid" />
-        <span className="mp-card-art-tick">{listing.tick}</span>
-        <span className={`mp-card-rarity rarity-${tier.cls}`}>{tier.name}</span>
+    <div className="mp-card">
+      <div className="mp-card-art mp-card-art-code">
+        <InscriptionCodePreview tick={listing.tick} amount={listing.amount} hue={hues.a} />
+        <span className="mp-card-proto" title="Protocol">MON-20</span>
         {isMine && <span className="mp-card-mine">YOURS</span>}
       </div>
       <div className="mp-card-body">
@@ -645,6 +659,16 @@ function ListingCard({ listing, account, busy, view, onBuy, onCancel }) {
             <span className="lbl">Unit</span>
             <em>{fmtMon(unit)}</em>
           </div>
+        </div>
+        <div className="mp-card-onchain">
+          {listing.list_tx_hash && (
+            <span className="mp-card-tx" title={listing.list_tx_hash}>
+              <code>tx</code> <span>{fmtTx(listing.list_tx_hash)}</span>
+            </span>
+          )}
+          <span className="mp-card-insc" title="Inscription id">
+            <code>id</code> <span>#{listing.id}</span>
+          </span>
         </div>
         <div className="mp-card-meta">
           <span title={listing.seller}>by <code>{fmtAddr(listing.seller)}</code></span>

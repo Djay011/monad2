@@ -2824,11 +2824,36 @@ footer {
 .mp-filter-promo strong { display: block; color: #fff; font-size: 0.78rem; margin-bottom: 2px; }
 .mp-filter-promo p { margin: 0; font-size: 0.7rem; color: var(--mp-mut); line-height: 1.4; }
 
-/* ─── LISTINGS GRID ────────────────────────────────────────────── */
-.mp-grid { display: grid; gap: 16px; }
-.mp-grid:not(.list) { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-@media (min-width: 1400px) { .mp-grid:not(.list) { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); } }
-@media (min-width: 1800px) { .mp-grid:not(.list) { grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); } }
+/* ─── LISTINGS GRID (Magic-Eden / Blur style) ──────────────────── */
+.mp-grid {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+/* Mobile-first: 1 card per row */
+.mp-grid:not(.list) {
+  grid-template-columns: 1fr;
+}
+/* ≥640px (large phones / small tablets): 2 cards */
+@media (min-width: 640px) {
+  .mp-grid:not(.list) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* ≥1024px (tablet landscape / small desktop): 3 cards */
+@media (min-width: 1024px) {
+  .mp-grid:not(.list) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* ≥1280px (desktop): 4 cards — the Magic Eden / Blur density target */
+@media (min-width: 1280px) {
+  .mp-grid:not(.list) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+/* ≥1680px (wide desktop): 5 cards */
+@media (min-width: 1680px) {
+  .mp-grid:not(.list) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+/* ≥2000px (ultra-wide): 6 cards */
+@media (min-width: 2000px) {
+  .mp-grid:not(.list) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
 .mp-grid.list { grid-template-columns: 1fr; gap: 6px; }
 
 .mp-card {
@@ -2855,6 +2880,208 @@ footer {
   background: linear-gradient(180deg, rgba(11,13,18,0) 50%, rgba(11,13,18,0.55) 100%);
   pointer-events: none;
 }
+
+/* ─── INSCRIPTION JSON CODE PREVIEW (replaces gradient art) ─────── */
+.mp-card-art-code { background: #0a0814; }
+.mp-card-art-code::after { display: none; } /* turn off the legacy bottom fade */
+
+.insc-preview {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, monospace;
+  background:
+    radial-gradient(140% 100% at 0% 0%, rgba(139, 92, 246, 0.10), transparent 60%),
+    linear-gradient(180deg, #0d0a1a 0%, #07050d 100%);
+  isolation: isolate;
+}
+
+/* Animated purple glow blob behind code, hue-shifted per listing */
+.insc-preview-glow {
+  position: absolute; inset: -10%;
+  filter: blur(28px);
+  opacity: 0.9;
+  z-index: 0;
+  pointer-events: none;
+  animation: inscGlowDrift 14s ease-in-out infinite alternate;
+}
+@keyframes inscGlowDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-6%, 4%) scale(1.08); }
+}
+
+/* Subtle film grain / noise via SVG turbulence */
+.insc-preview-noise {
+  position: absolute; inset: 0;
+  z-index: 1;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Editor chrome — traffic-light dots + filename tab */
+.insc-preview-chrome {
+  position: relative; z-index: 3;
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0));
+}
+.insc-preview-chrome .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,0.4) inset;
+}
+.insc-preview-chrome .dot.r { background: #ff5f57; }
+.insc-preview-chrome .dot.y { background: #febc2e; }
+.insc-preview-chrome .dot.g { background: #28c840; }
+.insc-preview-fname {
+  margin-left: 6px;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: rgba(220, 215, 255, 0.55);
+  font-weight: 500;
+}
+
+/* The actual code block */
+.insc-preview-code {
+  position: relative; z-index: 2;
+  flex: 1;
+  margin: 0;
+  padding: 12px 14px 14px;
+  font-size: 0.78rem;
+  line-height: 1.55;          /* VSCode-ish line-height */
+  letter-spacing: 0.005em;
+  color: #d6d3e8;
+  text-shadow: 0 0 14px rgba(139, 92, 246, 0.15);
+  white-space: pre;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.insc-preview-code .ln-row {
+  display: block;
+  white-space: pre;
+}
+.insc-preview-code .ln {
+  display: inline-block;
+  width: 1.4em;
+  margin-right: 0.85em;
+  text-align: right;
+  color: rgba(160, 150, 200, 0.32);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* Token colors — close to GitHub Dark / VSCode One Dark Pro hybrid */
+.insc-preview-code .tok.k  { color: #c4b5fd; }       /* JSON keys (purple-lavender) */
+.insc-preview-code .tok.s  { color: #7ee7c7; }       /* string values (mint green) */
+.insc-preview-code .tok.n  { color: #ffd479; font-weight: 500; } /* numeric-string (amount) */
+.insc-preview-code .tok.pn { color: #6b6885; }       /* punctuation/braces (muted) */
+
+/* Glass overlay — subtle highlight diagonal sweep */
+.insc-preview-glass {
+  position: absolute; inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,0) 100%),
+    linear-gradient(0deg, rgba(7,5,13,0.55) 0%, rgba(7,5,13,0) 38%);
+  border-radius: inherit;
+}
+
+/* Tick badge in the corner — keeps brand visible without the old big text */
+.insc-preview-tick {
+  position: absolute;
+  bottom: 10px; right: 12px;
+  z-index: 5;
+  font-family: var(--mp-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: #e9e4ff;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+}
+
+/* On hover, gently lift the code (matches existing card hover) */
+.mp-card:hover .insc-preview-glow { animation-duration: 8s; opacity: 1; }
+.mp-card:hover .insc-preview-code { text-shadow: 0 0 18px rgba(139, 92, 246, 0.28); }
+
+/* Compact list-view variant — hide chrome + line numbers */
+.mp-card.list .mp-card-art-code .insc-preview-chrome,
+.mp-card.list .mp-card-art-code .insc-preview-code .ln,
+.mp-card.list .mp-card-art-code .insc-preview-tick { display: none; }
+.mp-card.list .mp-card-art-code .insc-preview-code {
+  padding: 4px 6px; font-size: 0.55rem; line-height: 1.25;
+}
+
+/* ─── ON-CHAIN METADATA (replaces rarity badges) ────────────────── */
+/* Protocol pill in the card art corner — replaces rarity tier badge */
+.mp-card-proto {
+  position: absolute;
+  top: 10px; left: 10px;
+  z-index: 6;
+  display: inline-flex; align-items: center;
+  font-family: var(--mp-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  padding: 3px 7px;
+  border-radius: 3px;
+  color: rgba(220, 215, 255, 0.85);
+  background: rgba(15, 10, 30, 0.55);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-transform: uppercase;
+}
+
+/* On-chain meta strip in the card body: tx hash + inscription id */
+.mp-card-onchain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: var(--mp-mono);
+  font-size: 0.66rem;
+  color: rgba(220, 215, 240, 0.7);
+}
+.mp-card-onchain code {
+  display: inline-block;
+  padding: 1px 4px;
+  margin-right: 4px;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(160, 150, 200, 0.55);
+  background: rgba(139, 92, 246, 0.06);
+  border-radius: 3px;
+}
+.mp-card-onchain .mp-card-tx,
+.mp-card-onchain .mp-card-insc {
+  display: inline-flex; align-items: center;
+  white-space: nowrap;
+}
+.mp-card-onchain .mp-card-tx span,
+.mp-card-onchain .mp-card-insc span {
+  color: #c4b5fd;
+}
+
+/* Neutralize legacy tier-* card outlines (no rarity coloring) */
+.mp-card.tier-common, .mp-card.tier-uncommon,
+.mp-card.tier-rare, .mp-card.tier-epic { border-color: var(--mp-line); }
+
+/* Hide any remaining rarity badge if it's still mounted somewhere */
+.mp-card-rarity { display: none !important; }
+.mp-row-cell .mp-card-rarity { display: none !important; }
 .mp-card-art-grid {
   position: absolute; inset: 0;
   background:
