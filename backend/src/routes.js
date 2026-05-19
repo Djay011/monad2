@@ -1,10 +1,16 @@
 import express from 'express';
+import crypto from 'node:crypto';
+import { ethers } from 'ethers';
 import {
   recentMints,
   userMints,
   tokenStats,
   topHolders,
   balanceFor,
+  recordVisit,
+  getAdminStats,
+  getAllFlags,
+  upsertFlag,
 } from './db.js';
 import {
   createListing,
@@ -17,6 +23,29 @@ import {
   marketplaceActivity,
   listableBalance,
 } from './marketplace.js';
+import { config } from './config.js';
+
+// Hash IP with a per-process salt so logs are anonymized but visit dedup still works
+const IP_SALT = crypto.randomBytes(16).toString('hex');
+const hashIp = (ip) => crypto.createHash('sha256').update(IP_SALT + String(ip || '')).digest('hex').slice(0, 24);
+
+// Verify a wallet signature against the admin allowlist. Message must be:
+//   "monad-admin:<timestamp>"   (timestamp in seconds, within ±5 min of now)
+function verifyAdminAuth({ address, message, signature }) {
+  if (!address || !message || !signature) return false;
+  const lower = String(address).toLowerCase();
+  if (!config.adminWallets.includes(lower)) return false;
+  try {
+    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+    if (recovered !== lower) return false;
+  } catch { return false; }
+  const m = /^monad-admin:(\d+)$/.exec(String(message));
+  if (!m) return false;
+  const tsMsg = Number(m[1]);
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - tsMsg) > 300) return false; // 5min window
+  return true;
+}
 
 export function createRoutes({ indexer, marketIndexer, broadcast }) {
   const router = express.Router();
@@ -179,6 +208,59 @@ export function createRoutes({ indexer, marketIndexer, broadcast }) {
     }
 
     res.json({ ok: true, listing: updated });
+  });
+
+  /* ── Analytics tracking (public) ──────────────────────────────────────── */
+  router.post('/track', (req, res) => {
+    try {
+      const { sessionId, path, wallet } = req.body || {};
+      if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'sessionId required' });
+      }
+      const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+      recordVisit({
+        sessionId,
+        ipHash: hashIp(ip),
+        path: path || '/',
+        wallet: wallet && /^0x[a-fA-F0-9]{40}$/.test(wallet) ? wallet : null,
+        userAgent: req.headers['user-agent'] || '',
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /* ── Public flags (every client polls these) ──────────────────────────── */
+  router.get('/flags', (_req, res) => {
+    res.json({ flags: getAllFlags() });
+  });
+
+  /* ── Admin: stats (public-readable; can be locked down later) ─────────── */
+  router.get('/admin/stats', (_req, res) => {
+    res.json(getAdminStats());
+  });
+
+  /* ── Admin: admin wallets allowlist (public, for UI gating) ───────────── */
+  router.get('/admin/wallets', (_req, res) => {
+    res.json({ wallets: config.adminWallets });
+  });
+
+  /* ── Admin: update a flag (requires wallet signature) ─────────────────── */
+  router.post('/admin/flags', (req, res) => {
+    try {
+      const { address, message, signature, key, enabled, value } = req.body || {};
+      if (!verifyAdminAuth({ address, message, signature })) {
+        return res.status(403).json({ error: 'unauthorized' });
+      }
+      upsertFlag({ key, enabled, value, updatedBy: address });
+      const flags = getAllFlags();
+      // Broadcast so all connected clients re-fetch flags instantly
+      if (broadcast) broadcast({ type: 'flags_updated', flags });
+      res.json({ ok: true, flags });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   return router;

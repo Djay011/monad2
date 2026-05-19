@@ -46,7 +46,40 @@ db.exec(`
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
   );
+
+  /* ── Admin dashboard tables ───────────────────────────────────────── */
+  CREATE TABLE IF NOT EXISTS analytics_visits (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          INTEGER NOT NULL,
+    session_id  TEXT NOT NULL,
+    ip_hash     TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    wallet      TEXT,
+    user_agent  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_visits_ts      ON analytics_visits(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_visits_session ON analytics_visits(session_id);
+  CREATE INDEX IF NOT EXISTS idx_visits_wallet  ON analytics_visits(wallet);
+
+  CREATE TABLE IF NOT EXISTS feature_flags (
+    key         TEXT PRIMARY KEY,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    value       TEXT NOT NULL DEFAULT '',
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_by  TEXT
+  );
 `);
+
+// Seed default feature flags (idempotent)
+const DEFAULT_FLAGS = [
+  { key: 'mint_enabled',         enabled: 1, value: '' },
+  { key: 'marketplace_enabled',  enabled: 1, value: '' },
+  { key: 'listing_enabled',      enabled: 1, value: '' },
+  { key: 'maintenance_mode',     enabled: 0, value: 'We are performing scheduled maintenance. Please check back soon.' },
+  { key: 'announcement',         enabled: 0, value: '' },
+];
+const seedFlag = db.prepare(`INSERT OR IGNORE INTO feature_flags (key, enabled, value) VALUES (?, ?, ?)`);
+for (const f of DEFAULT_FLAGS) seedFlag.run(f.key, f.enabled, f.value);
 
 // Prepared statements (node:sqlite uses positional `?` for run/get/all)
 const stmts = {
@@ -179,6 +212,132 @@ export function balanceFor(address) {
 export function balanceForTick(address, tick) {
   const row = stmts.balanceForAddressTick.get(address.toLowerCase(), tick.toUpperCase());
   return row ? Number(row.balance) : 0;
+}
+
+/* ── Admin dashboard helpers ─────────────────────────────────────────── */
+
+const adminStmts = {
+  insertVisit: db.prepare(`
+    INSERT INTO analytics_visits (ts, session_id, ip_hash, path, wallet, user_agent)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  totalVisits: db.prepare(`SELECT COUNT(*) AS n FROM analytics_visits`),
+  uniqueSessions: db.prepare(`SELECT COUNT(DISTINCT session_id) AS n FROM analytics_visits`),
+  uniqueIps: db.prepare(`SELECT COUNT(DISTINCT ip_hash) AS n FROM analytics_visits`),
+  uniqueWallets: db.prepare(`SELECT COUNT(DISTINCT wallet) AS n FROM analytics_visits WHERE wallet IS NOT NULL AND wallet != ''`),
+  onlineNow: db.prepare(`
+    SELECT COUNT(DISTINCT session_id) AS n
+    FROM analytics_visits
+    WHERE ts >= ?
+  `),
+  todayVisits: db.prepare(`
+    SELECT COUNT(*) AS n FROM analytics_visits WHERE ts >= ?
+  `),
+  byPath: db.prepare(`
+    SELECT path, COUNT(*) AS visits, COUNT(DISTINCT session_id) AS uniques
+    FROM analytics_visits
+    WHERE ts >= ?
+    GROUP BY path
+    ORDER BY visits DESC
+    LIMIT 20
+  `),
+  daily: db.prepare(`
+    SELECT
+      (ts / 86400) * 86400 AS day,
+      COUNT(*) AS visits,
+      COUNT(DISTINCT session_id) AS uniques
+    FROM analytics_visits
+    WHERE ts >= ?
+    GROUP BY day
+    ORDER BY day ASC
+  `),
+  recentVisits: db.prepare(`
+    SELECT ts, session_id, path, wallet, user_agent
+    FROM analytics_visits
+    ORDER BY ts DESC
+    LIMIT ?
+  `),
+  topWallets: db.prepare(`
+    SELECT wallet, COUNT(*) AS visits, MAX(ts) AS last_seen
+    FROM analytics_visits
+    WHERE wallet IS NOT NULL AND wallet != ''
+    GROUP BY wallet
+    ORDER BY last_seen DESC
+    LIMIT ?
+  `),
+  getAllFlags: db.prepare(`SELECT key, enabled, value, updated_at, updated_by FROM feature_flags`),
+  upsertFlag: db.prepare(`
+    INSERT INTO feature_flags (key, enabled, value, updated_at, updated_by)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      enabled    = excluded.enabled,
+      value      = excluded.value,
+      updated_at = excluded.updated_at,
+      updated_by = excluded.updated_by
+  `),
+};
+
+export function recordVisit({ sessionId, ipHash, path, wallet, userAgent }) {
+  const ts = Math.floor(Date.now() / 1000);
+  adminStmts.insertVisit.run(
+    ts,
+    String(sessionId || '').slice(0, 64),
+    String(ipHash || '').slice(0, 64),
+    String(path || '/').slice(0, 128),
+    wallet ? String(wallet).toLowerCase() : null,
+    String(userAgent || '').slice(0, 256),
+  );
+}
+
+export function getAdminStats() {
+  const now = Math.floor(Date.now() / 1000);
+  const fiveMinAgo = now - 300;
+  const todayStart = now - (now % 86400);
+  const lastWeek   = now - 7 * 86400;
+  const last30Days = now - 30 * 86400;
+
+  return {
+    totals: {
+      visits:         adminStmts.totalVisits.get().n,
+      sessions:       adminStmts.uniqueSessions.get().n,
+      unique_ips:     adminStmts.uniqueIps.get().n,
+      unique_wallets: adminStmts.uniqueWallets.get().n,
+    },
+    realtime: {
+      online_now:   adminStmts.onlineNow.get(fiveMinAgo).n,
+      today_visits: adminStmts.todayVisits.get(todayStart).n,
+    },
+    by_path:       adminStmts.byPath.all(lastWeek),
+    daily:         adminStmts.daily.all(last30Days),
+    recent_visits: adminStmts.recentVisits.all(50),
+    top_wallets:   adminStmts.topWallets.all(20),
+    ts: now,
+  };
+}
+
+export function getAllFlags() {
+  const rows = adminStmts.getAllFlags.all();
+  const map = {};
+  for (const r of rows) {
+    map[r.key] = {
+      enabled: Boolean(r.enabled),
+      value: r.value || '',
+      updated_at: r.updated_at,
+      updated_by: r.updated_by,
+    };
+  }
+  return map;
+}
+
+export function upsertFlag({ key, enabled, value, updatedBy }) {
+  if (!key || typeof key !== 'string') throw new Error('flag key required');
+  adminStmts.upsertFlag.run(
+    key,
+    enabled ? 1 : 0,
+    String(value ?? ''),
+    Math.floor(Date.now() / 1000),
+    updatedBy ? String(updatedBy).toLowerCase() : null,
+  );
 }
 
 /**

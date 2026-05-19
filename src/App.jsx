@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { Wallet, CheckCircle, AlertCircle, LogOut, Zap, Shield, Layers, Globe, Rocket, Target, Search, ExternalLink, Copy, Hash, Clock, TrendingUp, Coins, Sparkles } from 'lucide-react';
 import { api, subscribeEvents, rowToActivity } from './api';
 import Marketplace from './Marketplace';
+import AdminDashboard from './AdminDashboard';
 import ShaderBackground from './components/ShaderBackground';
 import {
   useInjectedWallets, WalletPicker,
@@ -81,15 +82,67 @@ function App() {
     if (path === '/mint') return 'mint';
     if (path === '/marketplace') return 'marketplace';
     if (path === '/docs') return 'docs';
+    if (path === '/admin') return 'admin';
     return 'about'; // Default to about for / or unknown paths
   };
   const [activeTab, setActiveTab] = useState(getInitialTab);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint', marketplace: '/marketplace', docs: '/docs' };
+    const pathMap = { inscriptions: '/My-Inscriptions', about: '/', mint: '/mint', marketplace: '/marketplace', docs: '/docs', admin: '/admin' };
     window.history.pushState(null, '', pathMap[tab] || '/');
   };
+
+  // ── Feature flags + admin dashboard ─────────────────────────────────
+  const [flags, setFlags] = useState({});
+  const [adminWallets, setAdminWallets] = useState([]);
+
+  const loadFlags = useCallback(async () => {
+    try {
+      const data = await api.flags();
+      setFlags(data.flags || {});
+    } catch (err) {
+      // silent — flags fall back to permissive defaults
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFlags();
+    api.adminWallets().then(d => setAdminWallets((d.wallets || []).map(s => s.toLowerCase()))).catch(() => {});
+    const id = setInterval(loadFlags, 30000);
+    return () => clearInterval(id);
+  }, [loadFlags]);
+
+  const isAdmin = useMemo(
+    () => !!account && adminWallets.includes(account.toLowerCase()),
+    [account, adminWallets]
+  );
+
+  // Helper: a flag is "enabled" if its row has enabled=true (default true if missing)
+  const flagOn = (key, defaultOn = true) => {
+    const f = flags[key];
+    if (!f) return defaultOn;
+    return !!f.enabled;
+  };
+
+  // ── Visit tracking (anonymous sessionId in localStorage) ────────────
+  useEffect(() => {
+    let sid = '';
+    try {
+      sid = localStorage.getItem('mon_session_id') || '';
+      if (!sid) {
+        sid = crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem('mon_session_id', sid);
+      }
+    } catch {
+      sid = `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    api.trackVisit({
+      sessionId: sid,
+      path: window.location.pathname,
+      wallet: account || null,
+    }).catch(() => {});
+  }, [activeTab, account]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -285,6 +338,9 @@ function App() {
       },
       onMarketEvent: (_data) => {
         // Could trigger marketplace refresh — handled by Marketplace component
+      },
+      onFlagsUpdated: (newFlags) => {
+        if (isMounted) setFlags(newFlags || {});
       },
     });
 
@@ -601,11 +657,20 @@ function App() {
             onClick={(e) => { e.preventDefault(); handleTabChange('inscriptions'); }}
           >My Inscriptions</a>
           <span className="nav-link disabled">Deploy <span className="soon-badge">soon</span></span>
-          <a
-            href="/marketplace"
-            className={`nav-link ${activeTab === 'marketplace' ? 'active' : ''}`}
-            onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}
-          >Marketplace</a>
+          {(flagOn('marketplace_enabled', true) || isAdmin) && (
+            <a
+              href="/marketplace"
+              className={`nav-link ${activeTab === 'marketplace' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}
+            >Marketplace</a>
+          )}
+          {isAdmin && (
+            <a
+              href="/admin"
+              className={`nav-link nav-link-admin ${activeTab === 'admin' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); handleTabChange('admin'); }}
+            >Admin</a>
+          )}
         </nav>
 
         <div className="header-right">
@@ -636,6 +701,20 @@ function App() {
           )}
         </div>
       </header>
+
+      {/* ── Site-wide banners (maintenance / announcement) ── */}
+      {flags.maintenance_mode?.enabled && flags.maintenance_mode?.value && (
+        <div className="site-banner maintenance">
+          <AlertCircle size={14} />
+          <span>{flags.maintenance_mode.value}</span>
+        </div>
+      )}
+      {flags.announcement?.enabled && flags.announcement?.value && (
+        <div className="site-banner announcement">
+          <Sparkles size={14} />
+          <span>{flags.announcement.value}</span>
+        </div>
+      )}
 
       <main>
         {activeTab === 'mint' && (
@@ -717,11 +796,13 @@ function App() {
               <button
                 className={`mint-btn-new ${totalMinted >= TOTAL_SUPPLY ? 'sold-out' : ''}`}
                 onClick={!account ? connectWallet : mintPepo}
-                disabled={isMinting || totalMinted >= TOTAL_SUPPLY}
+                disabled={isMinting || totalMinted >= TOTAL_SUPPLY || (!flagOn('mint_enabled', true) && !isAdmin)}
               >
                 {totalMinted >= TOTAL_SUPPLY
                   ? 'Sold Out'
-                  : (!account ? 'Connect Wallet' : (isMinting ? `Minting...` : 'Mint'))}
+                  : (!flagOn('mint_enabled', true) && !isAdmin)
+                    ? 'Minting Paused'
+                    : (!account ? 'Connect Wallet' : (isMinting ? `Minting...` : 'Mint'))}
               </button>
             </div>
 
@@ -790,8 +871,32 @@ function App() {
           />
         )}
 
-        {activeTab === 'marketplace' && (
-          <Marketplace account={account} signer={signer} tick={TICK} onBalanceChange={loadUserBalance} />
+        {activeTab === 'marketplace' && (flagOn('marketplace_enabled', true) || isAdmin) && (
+          <Marketplace
+            account={account}
+            signer={signer}
+            tick={TICK}
+            onBalanceChange={loadUserBalance}
+            listingEnabled={flagOn('listing_enabled', true) || isAdmin}
+          />
+        )}
+        {activeTab === 'marketplace' && !flagOn('marketplace_enabled', true) && !isAdmin && (
+          <div className="feature-disabled">
+            <AlertCircle size={36} />
+            <h3>Marketplace temporarily disabled</h3>
+            <p>The marketplace is currently turned off by the protocol team. Please check back soon.</p>
+          </div>
+        )}
+
+        {activeTab === 'admin' && isAdmin && (
+          <AdminDashboard account={account} signer={signer} />
+        )}
+        {activeTab === 'admin' && !isAdmin && (
+          <div className="feature-disabled">
+            <AlertCircle size={36} />
+            <h3>Admin access required</h3>
+            <p>Connect with an authorized admin wallet to access this dashboard.</p>
+          </div>
         )}
 
         {activeTab === 'about' && (

@@ -25,6 +25,12 @@ export const config = {
   marketPollIntervalMs: Number(process.env.MARKET_POLL_INTERVAL_MS || 6000),
   marketLogRange: Number(process.env.MARKET_LOG_RANGE || 100),
   marketBatchDelayMs: Number(process.env.MARKET_BATCH_DELAY_MS || 250),
+
+  // Admin dashboard — comma-separated list of allowed wallet addresses (lowercased)
+  adminWallets: (process.env.ADMIN_WALLETS || '0x6fC09727F83Ef23782cF80Cd11e1bda534532267')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean),
 };
 
 if (!config.receiverWallet || !config.receiverWallet.startsWith('0x')) {

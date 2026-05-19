@@ -51,6 +51,13 @@ export const api = {
   cancelListing: (id, seller) => post(`/api/marketplace/listings/${id}/cancel`, { seller }),
   confirmBuy: (id, buyer, tx_hash) =>
     post(`/api/marketplace/listings/${id}/buy`, { buyer, tx_hash }),
+
+  // ── Admin / analytics ───────────────────────────────────────────────
+  trackVisit: (payload) => post('/api/track', payload),
+  flags: () => request('/api/flags'),
+  adminStats: () => request('/api/admin/stats'),
+  adminWallets: () => request('/api/admin/wallets'),
+  setFlag: (payload) => post('/api/admin/flags', payload),
 };
 
 /**
@@ -91,6 +98,9 @@ export function subscribeEvents(handlers = {}) {
           case 'market_sold':
           case 'market_cancelled':
             handlers.onMarketEvent?.(msg);
+            break;
+          case 'flags_updated':
+            handlers.onFlagsUpdated?.(msg.flags || {});
             break;
         }
       } catch {}

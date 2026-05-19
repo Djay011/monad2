@@ -18,7 +18,7 @@ const fmtMon = (n) => {
   return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
 };
 
-export default function Marketplace({ account, signer, tick = 'BOB', onBalanceChange }) {
+export default function Marketplace({ account, signer, tick = 'BOB', onBalanceChange, listingEnabled = true }) {
   const [listings, setListings] = useState([]);
   const [activity, setActivity] = useState([]);
   const [stats, setStats] = useState(null);
@@ -222,8 +222,8 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
           <button
             className="mp-btn primary"
             onClick={() => setShowList(true)}
-            disabled={contractMissing}
-            title={contractMissing ? 'Deploy the marketplace contract first' : undefined}
+            disabled={contractMissing || !listingEnabled}
+            title={!listingEnabled ? 'Listing creation is temporarily disabled' : (contractMissing ? 'Deploy the marketplace contract first' : undefined)}
           >
             <Tag size={13} /> List item
           </button>
@@ -342,7 +342,8 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
               <button
                 className="mp-cta sm"
                 onClick={() => setShowList(true)}
-                disabled={contractMissing}
+                disabled={contractMissing || !listingEnabled}
+                title={!listingEnabled ? 'Listing creation is temporarily disabled' : undefined}
               >
                 <Plus size={14} /> Create a listing
               </button>
