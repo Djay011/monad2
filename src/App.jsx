@@ -26,10 +26,10 @@ const TARGET_NETWORK = {
 // Contract & Mint Details
 const RECEIVER_WALLET = '0x6fC09727F83Ef23782cF80Cd11e1bda534532267';
 const MINT_PRICE = '0.002'; // 0.002 MON
-const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"BOB","amt":"1000"}';
+const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"MONS","amt":"1000"}';
 const TOTAL_SUPPLY = 21000000;
 const MINT_AMOUNT = 1000;
-const TICK = 'BOB';
+const TICK = 'MONS';
 const INITIAL_MINTED = 0; // Set your starting progress here (e.g. 10M)
 // Auto-baselines to the receiver wallet's current balance on first load so supply starts at 0.
 const BASELINE_KEY = `bob_baseline_balance_${RECEIVER_WALLET}`;
