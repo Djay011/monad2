@@ -6,14 +6,13 @@ import {
 import { api } from './api';
 
 const FLAG_META = {
-  mint_enabled:        { label: 'Mint button',         desc: 'Allow users to mint new inscriptions.', kind: 'toggle' },
-  marketplace_enabled: { label: 'Marketplace tab',     desc: 'Show the Marketplace tab in navigation.', kind: 'toggle' },
-  listing_enabled:     { label: 'Create Listing',      desc: 'Allow sellers to create new listings.', kind: 'toggle' },
-  maintenance_mode:    { label: 'Maintenance banner',  desc: 'Show a site-wide maintenance banner.', kind: 'banner' },
-  announcement:        { label: 'Announcement',        desc: 'Show a custom announcement banner.', kind: 'banner' },
+  mint_enabled:     { label: 'Mint button',         desc: 'Allow users to mint new inscriptions.', kind: 'toggle' },
+  listing_enabled:  { label: 'Create Listing',      desc: 'Allow sellers to create new listings on the marketplace.', kind: 'toggle' },
+  maintenance_mode: { label: 'Maintenance banner',  desc: 'Show a site-wide maintenance banner.', kind: 'banner' },
+  announcement:     { label: 'Announcement',        desc: 'Show a custom announcement banner.', kind: 'banner' },
 };
 
-const FLAG_ORDER = ['mint_enabled', 'marketplace_enabled', 'listing_enabled', 'maintenance_mode', 'announcement'];
+const FLAG_ORDER = ['mint_enabled', 'listing_enabled', 'maintenance_mode', 'announcement'];
 
 const fmtNum = (n) => Number(n || 0).toLocaleString();
 const fmtAddr = (a) => a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—';

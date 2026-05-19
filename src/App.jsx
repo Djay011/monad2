@@ -657,13 +657,11 @@ function App() {
             onClick={(e) => { e.preventDefault(); handleTabChange('inscriptions'); }}
           >My Inscriptions</a>
           <span className="nav-link disabled">Deploy <span className="soon-badge">soon</span></span>
-          {(flagOn('marketplace_enabled', true) || isAdmin) && (
-            <a
-              href="/marketplace"
-              className={`nav-link ${activeTab === 'marketplace' ? 'active' : ''}`}
-              onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}
-            >Marketplace</a>
-          )}
+          <a
+            href="/marketplace"
+            className={`nav-link ${activeTab === 'marketplace' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); handleTabChange('marketplace'); }}
+          >Marketplace</a>
           {isAdmin && (
             <a
               href="/admin"
@@ -871,7 +869,7 @@ function App() {
           />
         )}
 
-        {activeTab === 'marketplace' && (flagOn('marketplace_enabled', true) || isAdmin) && (
+        {activeTab === 'marketplace' && (
           <Marketplace
             account={account}
             signer={signer}
@@ -879,13 +877,6 @@ function App() {
             onBalanceChange={loadUserBalance}
             listingEnabled={flagOn('listing_enabled', true) || isAdmin}
           />
-        )}
-        {activeTab === 'marketplace' && !flagOn('marketplace_enabled', true) && !isAdmin && (
-          <div className="feature-disabled">
-            <AlertCircle size={36} />
-            <h3>Marketplace temporarily disabled</h3>
-            <p>The marketplace is currently turned off by the protocol team. Please check back soon.</p>
-          </div>
         )}
 
         {activeTab === 'admin' && isAdmin && (

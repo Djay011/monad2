@@ -225,7 +225,7 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
             disabled={contractMissing || !listingEnabled}
             title={!listingEnabled ? 'Listing creation is temporarily disabled' : (contractMissing ? 'Deploy the marketplace contract first' : undefined)}
           >
-            <Tag size={13} /> List item
+            <Tag size={13} /> {!listingEnabled ? 'Listing Paused' : 'List item'}
           </button>
         </div>
       </section>
@@ -345,7 +345,7 @@ export default function Marketplace({ account, signer, tick = 'BOB', onBalanceCh
                 disabled={contractMissing || !listingEnabled}
                 title={!listingEnabled ? 'Listing creation is temporarily disabled' : undefined}
               >
-                <Plus size={14} /> Create a listing
+                <Plus size={14} /> {!listingEnabled ? 'Listing Paused' : 'Create a listing'}
               </button>
             </div>
           ) : (
