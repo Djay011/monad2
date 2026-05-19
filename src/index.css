@@ -4736,3 +4736,334 @@ footer {
 @media (max-width: 600px) {
   .docs-network-row { grid-template-columns: 1fr; gap: 4px; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE OPTIMIZATIONS
+   Consolidated overrides for phones (≤768px and ≤480px)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* ─── Global ─── */
+  html, body { overflow-x: hidden; }
+  body { font-size: 14.5px; -webkit-text-size-adjust: 100%; }
+  .app-container { padding: 0; }
+  main { padding: 16px 14px 32px !important; }
+
+  /* ─── Header ─── */
+  header {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    align-items: center;
+  }
+  .logo {
+    font-size: 1rem;
+    gap: 8px;
+  }
+  .logo-img { width: 28px; height: 28px; }
+
+  .header-nav {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px 0;
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .header-nav::-webkit-scrollbar { display: none; }
+  .header-nav .nav-link {
+    flex-shrink: 0;
+    font-size: 0.82rem;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+  .header-nav .nav-link.disabled .soon-badge { font-size: 0.55rem; padding: 1px 5px; }
+
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .x-link { width: 32px; height: 32px; }
+  .wallet-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+  .wallet-info-container {
+    flex: 1;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .wallet-balance, .wallet-address {
+    font-size: 0.78rem;
+    padding: 6px 10px;
+  }
+
+  /* ─── Mint card ─── */
+  .mint-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .mint-card-new {
+    padding: 18px 16px;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 100%;
+  }
+  .mint-card-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .minting-ticker { font-size: 1.4rem; }
+  .progress-percentage { font-size: 0.95rem; }
+  .progress-numbers { font-size: 0.75rem; }
+  .progress-text-row { flex-wrap: wrap; gap: 4px; }
+
+  .repeat-controls,
+  .amount-controls {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mint-button {
+    width: 100%;
+    font-size: 0.95rem;
+    padding: 14px;
+  }
+
+  /* ─── About / hero ─── */
+  .about-hero { padding: 32px 16px; }
+  .about-title { font-size: clamp(1.8rem, 7vw, 2.6rem) !important; line-height: 1.15; }
+  .about-subtitle { font-size: 0.95rem; }
+  .about-stats-bar {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 14px !important;
+    padding: 16px;
+  }
+  .about-stat-value { font-size: 1.3rem; }
+  .about-stat-label { font-size: 0.7rem; }
+
+  /* ─── My Inscriptions ─── */
+  .myinsc-hero { padding: 18px 16px !important; }
+  .myinsc-balance-value { font-size: 2rem !important; }
+  .myinsc-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  .myinsc-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .myinsc-search { width: 100%; }
+  .myinsc-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+  .insc-card-preview-code { font-size: 0.74rem; padding: 12px 14px; }
+  .insc-card-meta { padding: 11px 12px; gap: 6px; }
+  .insc-card-meta-value { font-size: 0.74rem; max-width: 65%; }
+
+  /* ─── Marketplace ─── */
+  .mp { padding: 12px 12px 32px !important; }
+  .mp-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .mp-header-text { width: 100%; }
+  .mp-header-title-row { flex-wrap: wrap; gap: 6px; }
+  .mp-title { font-size: 1.6rem !important; }
+  .mp-header-sub { font-size: 0.84rem; }
+  .mp-header-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 8px;
+  }
+  .mp-header-actions .mp-btn {
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
+  }
+
+  .mp-metrics {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .mp-metric { padding: 10px 12px; }
+  .mp-metric-value { font-size: 1.05rem; }
+  .mp-metric-label { font-size: 0.62rem; }
+
+  .mp-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .mp-toolbar-right { flex-wrap: wrap; }
+  .mp-search { width: 100%; }
+
+  .mp-layout { grid-template-columns: 1fr !important; gap: 16px; }
+  .mp-side { display: none; }
+
+  .mp-grid.grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+    gap: 12px;
+  }
+
+  .mp-ticker-bar { padding: 6px 12px; gap: 8px; }
+  .mp-ticker-label { font-size: 0.62rem; }
+
+  /* ─── Activity feed (mobile compact) ─── */
+  .mp-act-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .mp-act-head-title { flex-wrap: wrap; gap: 8px; }
+  .mp-act-counters { gap: 6px; }
+  .mp-act-counter {
+    flex: 1;
+    min-width: 70px;
+    padding: 5px 9px;
+  }
+  .mp-act-counter strong { font-size: 0.85rem; }
+  .mp-act-spark { display: none; }
+
+  /* ─── Docs page ─── */
+  .docs-page { padding: 22px 14px 48px !important; }
+  .docs-page .docs-hero {
+    padding: 28px 18px 22px;
+    border-radius: 12px;
+    margin-bottom: 36px;
+  }
+  .docs-page .docs-hero h1 { font-size: clamp(1.7rem, 7vw, 2.3rem) !important; }
+  .docs-page .docs-hero p { font-size: 0.92rem; }
+
+  .docs-section { margin-bottom: 32px; }
+  .docs-section-head { gap: 10px; padding-bottom: 10px; margin-bottom: 14px; }
+  .docs-page .docs-section h2 { font-size: 1.15rem !important; }
+
+  .docs-codeblock-body { font-size: 0.74rem; padding: 12px 0; }
+  .docs-codeblock-gutter { padding: 0 9px 0 12px; }
+  .docs-codeblock-code { padding: 0 12px; }
+
+  .docs-arch-node { padding: 12px 14px; }
+  .docs-arch-node strong { font-size: 0.92rem; }
+  .docs-arch-node span:not(.docs-arch-tag) { font-size: 0.76rem; }
+  .docs-arch-arrow { height: 28px; }
+  .docs-arch-arrow span { font-size: 0.6rem; left: 12px; padding: 1px 6px; }
+
+  .docs-network-row { padding: 11px 14px; }
+  .docs-faq { padding: 12px 14px; }
+  .docs-faq summary { font-size: 0.92rem; }
+  .docs-faq p { font-size: 0.86rem; }
+
+  /* ─── Footer ─── */
+  .site-footer { padding: 28px 16px 18px; margin-top: 40px; }
+  .footer-bottom {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 6px;
+    font-size: 0.7rem;
+  }
+
+  /* ─── Modals (full-screen on mobile) ─── */
+  .modal-overlay, .mp-modal-backdrop {
+    padding: 12px !important;
+    align-items: flex-end;
+  }
+  .modal-content, .mp-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92vh;
+    overflow-y: auto;
+    border-radius: 14px 14px 0 0 !important;
+    padding: 18px !important;
+  }
+  .modal-content h2, .mp-modal h2 { font-size: 1.15rem; }
+
+  /* ─── Generic buttons ─── */
+  button, .btn { min-height: 38px; }
+
+  /* ─── Tables become scrollable ─── */
+  .docs-table, table { font-size: 0.82rem; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 14px; }
+  main { padding: 14px 12px 28px !important; }
+
+  /* Header even tighter */
+  header { padding: 10px 12px; gap: 8px; }
+  .logo { font-size: 0.94rem; }
+  .logo-img { width: 26px; height: 26px; }
+  .header-nav .nav-link { padding: 5px 9px; font-size: 0.78rem; }
+  .wallet-btn { font-size: 0.8rem; padding: 7px 10px; }
+  .wallet-balance, .wallet-address { font-size: 0.72rem; padding: 5px 8px; }
+
+  /* Mint */
+  .mint-card-new { padding: 16px 14px; }
+  .minting-ticker { font-size: 1.2rem; }
+  .progress-numbers { font-size: 0.7rem; }
+
+  /* About */
+  .about-title { font-size: 1.6rem !important; }
+  .about-stat-value { font-size: 1.15rem; }
+
+  /* Inscription card */
+  .insc-card-preview-chrome { padding: 8px 11px 6px; }
+  .insc-card-preview-code { font-size: 0.7rem; line-height: 1.5; }
+  .insc-card-meta-row { gap: 8px; }
+  .insc-card-meta-label { font-size: 0.58rem; letter-spacing: 0.12em; }
+
+  /* Marketplace */
+  .mp-title { font-size: 1.35rem !important; }
+  .mp-metrics { grid-template-columns: 1fr 1fr !important; }
+  .mp-grid.grid {
+    grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)) !important;
+    gap: 10px;
+  }
+
+  /* Activity rows in mobile already 2-col grid via existing 640px rule */
+  .mp-act-head { padding: 10px 12px; }
+  .mp-act-row { padding: 9px 12px; gap: 4px 10px; font-size: 0.78rem; }
+  .mp-act-pill { font-size: 0.56rem; padding: 2px 6px; }
+
+  /* Docs */
+  .docs-page { padding: 18px 12px 36px !important; }
+  .docs-page .docs-hero { padding: 22px 14px 18px; }
+  .docs-page .docs-hero h1 { font-size: 1.5rem !important; line-height: 1.2; }
+  .docs-page .docs-hero p { font-size: 0.86rem; }
+  .docs-stat strong { font-size: 1.15rem; }
+  .docs-stat-label { font-size: 0.56rem; }
+  .docs-codeblock-body { font-size: 0.7rem; line-height: 1.5; }
+  .docs-feature { padding: 12px 14px; }
+  .docs-feature strong { font-size: 0.86rem; }
+  .docs-feature span { font-size: 0.78rem; }
+  .docs-step { padding: 10px 12px; gap: 10px; }
+  .docs-step-i { width: 22px; height: 22px; font-size: 0.7rem; }
+
+  /* Footer */
+  .footer-nav { gap: 14px 18px; font-size: 0.82rem; }
+  .footer-brand strong { font-size: 0.92rem; }
+  .footer-brand span { font-size: 0.72rem; }
+}
+
+/* ─── Landscape phone tweaks ─── */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+  header { flex-direction: row; flex-wrap: wrap; }
+  .about-hero { padding: 22px 16px; }
+  .docs-hero { padding: 22px 18px !important; }
+}
+
+/* ─── Touch target accessibility ─── */
+@media (hover: none) and (pointer: coarse) {
+  a, button, .nav-link, .mp-btn, .wallet-btn { min-height: 38px; }
+  .docs-faq summary, .footer-nav a { padding: 6px 0; }
+}
