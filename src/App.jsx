@@ -740,16 +740,16 @@ function App() {
                 <input type="text" value={MINT_AMOUNT.toLocaleString()} readOnly />
               </div>
               <div className="input-field-group">
-                <label>REPEAT (1 – 5000)</label>
+                <label>REPEAT (1 – 100)</label>
                 <input
                   type="number"
                   min="1"
-                  max="5000"
+                  max="100"
                   value={repeatCount}
                   onChange={(e) => {
                     let val = parseInt(e.target.value);
                     if (isNaN(val)) val = 1;
-                    if (val > 5000) val = 5000;
+                    if (val > 100) val = 100;
                     if (val < 1) val = 1;
                     setRepeatCount(val);
                   }}
