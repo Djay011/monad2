@@ -26,7 +26,7 @@ const TARGET_NETWORK = {
 
 // Contract & Mint Details
 const RECEIVER_WALLET = '0x6fC09727F83Ef23782cF80Cd11e1bda534532267';
-const MINT_PRICE = '25'; // 25 MON
+const MINT_PRICE = '10'; // 10 MON
 const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick":"MONS","amt":"1000"}';
 const TOTAL_SUPPLY = 21000000;
 const MINT_AMOUNT = 1000;
