@@ -31,7 +31,7 @@ const INSCRIPTION_DATA = 'data:application/json,{"p":"mon-20","op":"mint","tick"
 const TOTAL_SUPPLY = 21000000;
 const MINT_AMOUNT = 1000;
 const TICK = 'MONS';
-const INITIAL_MINTED = 0; // Set your starting progress here (e.g. 10M)
+const INITIAL_MINTED = 6328956; // Starting offset; live mints add on top
 // Auto-baselines to the receiver wallet's current balance on first load so supply starts at 0.
 const BASELINE_KEY = `bob_baseline_balance_${RECEIVER_WALLET}`;
 
